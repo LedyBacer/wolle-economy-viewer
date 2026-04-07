@@ -64,6 +64,25 @@ def sidebar_filters(df: pd.DataFrame) -> pd.DataFrame:
     return df[mask].copy()
 
 
+def show_data_quality_warning(df: pd.DataFrame) -> None:
+    """Предупреждаем, если в выборке есть продавцы с пробелами в данных."""
+    # У этих продавцов в БД отсутствует ya_order_margin_report (sell_price/market_services
+    # подставляются из buyer_price+subsidy, market_services фолбэка нет → expected_payout
+    # завышен на сумму комиссии ЯМ).
+    no_margin_report = {"ТехноПравда Гонконг", "WolleBuy"}
+    affected = no_margin_report & set(df["seller_name"].dropna().unique())
+    if not affected:
+        return
+    n = df[df["seller_name"].isin(affected)].shape[0]
+    st.warning(
+        f"⚠ В выборку попали магазины с неполными данными: {', '.join(sorted(affected))} "
+        f"({n} строк). Для них в БД нет отчёта о марже Маркета — комиссии ЯМ "
+        f"и фактический перевод недооценены/нулевые. Цифры по этим магазинам "
+        f"справочные, не финансово-точные.",
+        icon="⚠",
+    )
+
+
 def show_metrics(df: pd.DataFrame) -> None:
     c = st.columns(5)
     c[0].metric("Заказов", f"{len(df):,}")
@@ -82,7 +101,7 @@ def show_table(df: pd.DataFrame) -> None:
 
     st.dataframe(
         view,
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         column_config={
             "Заказ создан":                          st.column_config.DatetimeColumn(format="DD.MM.YYYY HH:mm"),
@@ -96,16 +115,17 @@ def show_table(df: pd.DataFrame) -> None:
             "Минимальная цена":                      st.column_config.NumberColumn(format=money_fmt),
             "Ожидаемая прибыль":                     st.column_config.NumberColumn(format=money_fmt),
             "Цена продажи":                          st.column_config.NumberColumn(format=money_fmt),
-            "Начислено баллов":                      st.column_config.NumberColumn(format=money_fmt),
-            "Списано баллов":                        st.column_config.NumberColumn(format=money_fmt),
+            "Субсидия ЯМ (справочно, в sell_price)": st.column_config.NumberColumn(format=money_fmt),
+            "Промо-расходы (наши баллы)":            st.column_config.NumberColumn(format=money_fmt),
             "Разница от мин. цены":                  st.column_config.NumberColumn(format=money_fmt),
             "Расчётные комиссии":                    st.column_config.NumberColumn(format=money_fmt),
-            "Комиссии":                              st.column_config.NumberColumn(format=money_fmt),
+            "Комиссии (margin_report)":              st.column_config.NumberColumn(format=money_fmt),
+            "Факт. комиссии (ЛК)":                   st.column_config.NumberColumn(format=money_fmt),
             "Доход за вычетом комиссий":             st.column_config.NumberColumn(format=money_fmt),
             "Прибыль":                               st.column_config.NumberColumn(format=money_fmt),
             "Разница Прибыли Факт/Ожид":             st.column_config.NumberColumn(format=money_fmt),
-            "Доход за вычетом комиссий (с баллами)": st.column_config.NumberColumn(format=money_fmt),
-            "Прибыль без учёта баллов":              st.column_config.NumberColumn(format=money_fmt),
+            "Доход за вычетом комиссий и промо":     st.column_config.NumberColumn(format=money_fmt),
+            "Прибыль без учёта промо-расходов":      st.column_config.NumberColumn(format=money_fmt),
             "Штраф за отмену заказа":                st.column_config.NumberColumn(format=money_fmt),
             "Штраф за позднюю отгрузку":             st.column_config.NumberColumn(format=money_fmt),
             "Нам перевели за заказ":                 st.column_config.NumberColumn(format=money_fmt),
@@ -131,6 +151,7 @@ def main():
 
     filtered = sidebar_filters(df)
 
+    show_data_quality_warning(filtered)
     show_metrics(filtered)
     st.divider()
     show_table(filtered)

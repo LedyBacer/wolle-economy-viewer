@@ -27,8 +27,20 @@ SELECT
     i.count                       AS quantity,
 
     -- Статусы
+    -- Для заказов без margin_report (WolleBuy / ТехноПравда Гонконг и др.)
+    -- подставляем русскую расшифровку o.status, чтобы колонки не были пустыми.
     COALESCE(tr.status, o.status) AS order_status,
-    mr.status                     AS fulfillment_status,
+    COALESCE(
+        mr.status,
+        CASE o.status
+            WHEN 'DELIVERED'  THEN 'Доставлен'
+            WHEN 'CANCELLED'  THEN 'Отменён'
+            WHEN 'DELIVERY'   THEN 'В доставке'
+            WHEN 'PROCESSING' THEN 'В обработке'
+            WHEN 'PICKUP'     THEN 'Самовывоз'
+            ELSE o.status
+        END
+    )                             AS fulfillment_status,
     mr.payment_status             AS payment_status,
 
     -- Цены (за единицу)
@@ -44,7 +56,8 @@ SELECT
     mr.sell_price                 AS sell_price,
     mr.market_services            AS market_services,
 
-    -- Скидки из отчёта о транзакциях
+    -- Скидки и баллы из отчёта о транзакциях (на уровне позиции)
+    COALESCE(tr.bonuses, 0)                AS tr_bonuses,
     COALESCE(tr.our_discount, 0)           AS our_discount,
     COALESCE(tr.market_discount, 0)        AS market_discount,
     COALESCE(tr.other_market_discounts, 0) AS other_discounts,
@@ -52,11 +65,12 @@ SELECT
     COALESCE(tr.market_discount_ya_plus, 0) AS ya_plus_discount,
     COALESCE(tr.customer_refund_amount, 0) AS customer_refund,
 
-    -- Расчётные комиссии из нашей системы (заполнены не для всех)
-    COALESCE(i.markup_yandex_accepting_payments_fee_amount, 0) AS calc_accepting_fee,
-    COALESCE(i.markup_yandex_order_processing_fee_amount, 0)   AS calc_processing_fee,
-    COALESCE(i.markup_custom_delivery_fee_value_amount, 0)     AS calc_custom_delivery_fee,
-    COALESCE(i.markup_margin_amount, 0)                        AS calc_margin_amount,
+    -- Даты платежей из транзакционного отчёта (надёжнее payments_reports.payment_date)
+    tr.customer_payment_date      AS tr_customer_payment_date,
+    tr.refund_payment_date        AS tr_refund_payment_date,
+
+    -- Расчётные комиссии из нашей системы (только commission_* — это реальные
+    -- расчётные комиссии ЯМ; markup_* здесь не включаем, это наша наценка).
     COALESCE(i.commission_yandex_category_fee_amount, 0)       AS calc_category_fee,
     COALESCE(i.commission_yandex_transfer_payments_fee_amount, 0) AS calc_transfer_fee,
     COALESCE(i.commission_yandex_delivery_fee_actual_amount, 0)   AS calc_delivery_fee
@@ -86,45 +100,59 @@ ORDER BY o.created_at DESC
 
 # ---------------------------------------------------------------------------
 # Запрос 2: Агрегированные данные о платежах по заказам
-# Из ya_payments_reports — бонусы, скидки, штрафы, дата выплаты
+# Из ya_payments_reports — фактические комиссии, штрафы, даты выплат
 # ---------------------------------------------------------------------------
 PAYMENT_AGGREGATES_SQL = text("""
 SELECT
     ya_orders_id,
     MAX(payment_date) AS last_payment_date,
 
-    -- Баллы начислены нам за скидки Маркета / Яндекс Плюс
+    -- Фактические комиссии ЯМ (реальные удержания за услуги).
+    -- Новый формат (transaction_source заполнен): фильтруем по источнику 'Оплата услуг'.
+    -- Старый формат (transaction_source NULL): фильтруем по payment_status='Удержание'.
+    -- Так исключаем промо-списания (payment_status='Списание'), у которых item_name
+    -- совпадает с реальными комиссиями, что раньше приводило к двойному счёту.
     SUM(CASE
-        WHEN transaction_source IN (
-            'Баллы за скидку Маркета',
-            'Баллы за скидку Яндекс Плюс',
-            'Возврат скидки за участие в совместных акциях'
-        ) THEN transaction_amount ELSE 0
-    END) AS bonus_points,
-
-    -- Скидки, которые мы финансировали из своего кармана
-    SUM(CASE
-        WHEN transaction_source IN (
-            'Скидка за участие в совместных акциях',
-            'Возврат баллов за скидку Маркета'
-        ) THEN transaction_amount ELSE 0
-    END) AS promo_discounts,
+        WHEN transaction_amount < 0
+         AND (
+            transaction_source = 'Оплата услуг Яндекс.Маркета'
+            OR (transaction_source IS NULL AND payment_status = 'Удержание')
+         )
+        THEN -transaction_amount ELSE 0
+    END) AS fact_commissions,
 
     -- Штраф: отмена по вине продавца
     SUM(CASE
         WHEN item_name_or_service_name = 'Отмена заказа по вине продавца'
-         AND transaction_source = 'Оплата услуг Яндекс.Маркета'
-         AND payment_status = 'Удержан из платежей покупателей'
-        THEN transaction_amount ELSE 0
+         AND transaction_amount < 0
+        THEN -transaction_amount ELSE 0
     END) AS seller_cancel_penalty,
 
     -- Штраф: поздняя отгрузка/доставка
     SUM(CASE
         WHEN item_name_or_service_name = 'Отгрузка или доставка не вовремя'
-         AND transaction_source = 'Оплата услуг Яндекс.Маркета'
-         AND payment_status = 'Удержан из платежей покупателей'
+         AND transaction_amount < 0
+        THEN -transaction_amount ELSE 0
+    END) AS late_ship_penalty,
+
+    -- Компенсации в нашу пользу (положительные)
+    SUM(CASE
+        WHEN transaction_source IN (
+            'Компенсация за потерянный заказ',
+            'Компенсация по претензии',
+            'Возврат премии'
+        ) THEN transaction_amount ELSE 0
+    END) AS compensations,
+
+    -- Промо-расходы (наши расходы из баланса баллов на участие в акциях).
+    -- Новый формат: transaction_source = 'Скидка за участие в совместных акциях'.
+    -- Старый формат: transaction_source IS NULL AND payment_status = 'Списание'.
+    -- Результат ОТРИЦАТЕЛЬНЫЙ — это наши расходы (вычитаются из прибыли).
+    SUM(CASE
+        WHEN transaction_source = 'Скидка за участие в совместных акциях'
+          OR (transaction_source IS NULL AND payment_status = 'Списание')
         THEN transaction_amount ELSE 0
-    END) AS late_ship_penalty
+    END) AS promo_discounts
 
 FROM e_com.ya_payments_reports
 WHERE ya_orders_id IS NOT NULL
