@@ -1,0 +1,12 @@
+.venv
+__pycache__
+**/__pycache__
+*.pyc
+.git
+.gitignore
+.env
+.DS_Store
+.claude
+data/uploads
+*.md
+!CLAUDE.md

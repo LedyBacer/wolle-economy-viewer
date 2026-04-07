@@ -148,6 +148,8 @@ SELECT
     -- Новый формат: transaction_source = 'Скидка за участие в совместных акциях'.
     -- Старый формат: transaction_source IS NULL AND payment_status = 'Списание'.
     -- Результат ОТРИЦАТЕЛЬНЫЙ — это наши расходы (вычитаются из прибыли).
+    -- Lifetime по заказу: берём все записи вне зависимости от периода,
+    -- т.к. промо-списания могут попасть в другой отчётный период.
     SUM(CASE
         WHEN transaction_source = 'Скидка за участие в совместных акциях'
           OR (transaction_source IS NULL AND payment_status = 'Списание')

@@ -13,6 +13,7 @@ db/
   queries.py        # SQL-запросы: ORDER_ITEMS_SQL, PAYMENT_AGGREGATES_SQL, SELLERS_SQL
 pages/
   1_Заказы.py       # таблица заказов с фильтрами и метриками
+  2_Аналитика.py    # дашборд: по магазинам, топ товаров, статусы, промо, динамика
 ```
 
 ## Команды
@@ -65,7 +66,9 @@ PAYMENT_AGGREGATES_SQL   →  payments DataFrame (бонусы, штрафы, д
 - `our_costs` = `base_price_total + ff_fee_total + socket_adapter_total` — наши затраты
 - `expected_profit` = `expected_payout − our_costs` (без учёта промо)
 - `promo_discounts` = наши расходы на промо из баланса баллов (отрицательная сумма, из `ya_payments_reports`)
-- `profit` = `expected_payout + promo_discounts − our_costs` (с учётом промо)
+- `profit` = `expected_payout + promo_discounts − our_costs` (с учётом промо) → колонка `profit`
+- `profit_no_promo` = `expected_payout − our_costs` (без учёта промо; было `profit_no_bonus`)
+- `income_after_fees_promo` = `expected_payout + promo_discounts` (было `income_after_fees_bonus`)
 - `bonus_points` = субсидия ЯМ (tr.bonuses). **СПРАВОЧНО** — уже включена в `sell_price`, НЕ прибавлять к прибыли!
 - `calc_commissions` = сумма расчётных комиссий из `ya_order_items.commission_*` полей (~67% заказов)
 - `fact_commissions` = реальные удержания ЯМ из `ya_payments_reports` ≈ `market_services`

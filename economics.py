@@ -67,8 +67,8 @@ COLUMN_LABELS: dict[str, str] = {
     "income_after_fees":        "Доход за вычетом комиссий",
     "profit":                   "Прибыль",
     "profit_vs_expected":       "Разница Прибыли Факт/Ожид",
-    "income_after_fees_bonus":  "Доход за вычетом комиссий и промо",
-    "profit_no_bonus":          "Прибыль без учёта промо-расходов",
+    "income_after_fees_promo":  "Доход за вычетом комиссий и промо",
+    "profit_no_promo":          "Прибыль без учёта промо-расходов",
     "seller_cancel_penalty":    "Штраф за отмену заказа",
     "late_ship_penalty":        "Штраф за позднюю отгрузку",
     "payout_if_paid":           "Нам перевели за заказ",
@@ -107,8 +107,8 @@ DISPLAY_COLUMNS: list[str] = [
     "income_after_fees",
     "profit",
     "profit_vs_expected",
-    "income_after_fees_bonus",
-    "profit_no_bonus",
+    "income_after_fees_promo",
+    "profit_no_promo",
     "seller_cancel_penalty",
     "late_ship_penalty",
     "payout_if_paid",
@@ -189,12 +189,12 @@ def calc_economics(df: pd.DataFrame) -> pd.DataFrame:
     # promo_discounts — наши расходы на промо (отрицательная сумма), вычитаем.
     pd_ = df["promo_discounts"].fillna(0)  # отрицательная сумма промо-списаний
 
-    df["income_after_fees"]       = df["expected_payout"]
-    df["income_after_fees_bonus"] = df["expected_payout"] + pd_  # промо-расходы вычитаются (pd_ < 0)
+    df["income_after_fees"]      = df["expected_payout"]
+    df["income_after_fees_promo"] = df["expected_payout"] + pd_  # промо-расходы вычитаются (pd_ < 0)
 
     # --- Прибыль ---
-    df["profit"]         = df["income_after_fees_bonus"] - our_costs
-    df["profit_no_bonus"] = df["income_after_fees"] - our_costs
+    df["profit"]          = df["income_after_fees_promo"] - our_costs
+    df["profit_no_promo"] = df["income_after_fees"] - our_costs
 
     # --- Разница от минимальной цены ---
     df["diff_from_min_price"] = df["sell_price"].fillna(0) - df["min_sell_price_total"]
@@ -242,5 +242,33 @@ def calc_economics(df: pd.DataFrame) -> pd.DataFrame:
 
     # --- Строковый номер заказа ---
     df["order_id_str"] = df["order_id"].astype(str)
+
+    # ----------------------------------------------------------------------
+    # Дополнительные производные поля для расширенной аналитики
+    # ----------------------------------------------------------------------
+    # Наши затраты (на позицию) — отдельной колонкой для агрегаций
+    df["our_costs"] = our_costs
+
+    # Take rate ЯМ = доля комиссий в цене продажи (на уровне заказа,
+    # дублируется в позициях — корректно после dedup по ya_order_id)
+    sp = df["sell_price"].replace(0, np.nan)
+    df["take_rate_pct"] = (df["market_services"] / sp * 100).round(2)
+
+    # Маржа по позиции (после комиссий и промо)
+    df["margin_pct"] = (df["profit"] / sp * 100).round(2)
+
+    # Флаги статусов на уровне позиции
+    df["is_cancelled_before"] = df["fulfillment_status"].isin(CANCELLED_BEFORE_SHIP)
+    df["is_returned"]         = df["fulfillment_status"].isin(RETURNED_STATUSES)
+    df["is_cancelled_any"]    = df["fulfillment_status"].isin(CANCELLED_STATUSES)
+    df["is_delivered"]        = ~df["is_cancelled_any"]
+    df["is_loss"]             = df["profit"] < 0
+
+    # Лаги (в днях)
+    created = pd.to_datetime(df["created_at"], errors="coerce", utc=True)
+    shipped = pd.to_datetime(df["shipment_date"], errors="coerce", utc=True)
+    paid    = pd.to_datetime(df["last_payment_date"], errors="coerce", utc=True)
+    df["ship_lag_days"] = (shipped - created).dt.total_seconds() / 86400
+    df["pay_lag_days"]  = (paid - created).dt.total_seconds() / 86400
 
     return df
