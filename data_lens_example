@@ -1,0 +1,644 @@
+Запрос в источник данных
+```
+SELECT
+  t1.created_at_res0 AS res_0,
+  t1.original_shipment_date AS res_1,
+  t1.seller_name_res1 AS res_2,
+  t1.original_order_id_str_res2 AS res_3,
+  t1.offer_id_res3 AS res_4,
+  t1.product_name_res4 AS res_5,
+  t1.effective_order_status_res5 AS res_6,
+  t1.margin_report_status_res6 AS res_7,
+  t1.margin_report_payment_status_res7 AS res_8,
+  t1.item_count_res8 AS res_9,
+  t1.supplier_name_res9 AS res_10,
+  t1.base_price_total_res10 AS res_11,
+  t1.ff_fee_total_res11 AS res_12,
+  t1.socket_adapter_fee_total_res12 AS res_13,
+  t1.price_with_margin_res13 AS res_14,
+  t1.margin_percent_res14 AS res_15,
+  t1.final_price_total_res15 AS res_16,
+  t1.margin_value_res16 AS res_17,
+  t1.buyer_price_plus_subsidy_total_res17 AS res_18,
+  t1.sum_e20_bonus_points_res18 AS res_19,
+  t1.market_services_res19 AS res_20,
+  t1.price_diff_res20 AS res_21,
+  t1.markup_yandex_accepting_payments_fee_amount + t1.markup_yandex_order_processing_fee_amount + t1.commission_yandex_transfer_payments_fee_amount + t1.commission_yandex_category_fee_amount + t1.commission_yandex_delivery_fee_actual_amount + t1.markup_custom_delivery_fee_value_amount AS res_22,
+  t1.sum_e21_promo_discount_res21 AS res_23,
+  t1.calc_val_res22 AS res_24,
+  t1.calc_val_minus_e73_res23 AS res_25,
+  t1.calc_percent_res24 AS res_26,
+  t1.avg_e72_val_res25 AS res_27,
+  t1.avg_e72_minus_e73_res26 AS res_28,
+  t1.seller_cancel_fee_res27 AS res_29,
+  t1.late_ship_fee_res28 AS res_30,
+  t1.conditional_avg_e72_res29 AS res_31,
+  t1.sum_vyplat AS res_32,
+  t1.data_vyplat AS res_33,
+  CASE WHEN (t1.data_vyplat IS NULL) THEN 0 ELSE CASE WHEN (t1.margin_report_status_res6 IN ('Отменен при обработке', 'Полный возврат принят на складе', 'Заказ отменен до обработки') OR t1.margin_report_payment_status_res7 = 'Не будет переведён из-за отмены заказа') THEN t1.sum_vyplat ELSE CASE WHEN (t1.margin_report_payment_status_res7 = 'Будет переведён') THEN t1.sum_vyplat ELSE ((t1.sum_vyplat - t1.socket_adapter_fee_total_res12) - t1.ff_fee_total_res11) - t1.base_price_total_res10 END END END AS res_34
+FROM
+(
+WITH
+-- 1. Базовый CTE для извлечения основных данных по позициям заказов (order items)
+order_item_base AS (
+  SELECT
+    t1.id AS order_pk,
+    t1.created_at,
+    t1.shipment_date, -- <<<< ИЗМЕНЕНИЕ 1: Добавляем оригинальную дату отгрузки
+    t5.seller_name,
+    t1.order_id AS original_order_id_numeric,
+    t2.offer_id,
+    t2.id AS order_item_identifier,
+    t4.name AS product_name,
+    COALESCE(t7.status, t1.status) AS effective_order_status,
+    t6.status AS margin_report_status,
+    t6.payment_status AS margin_report_payment_status,
+    t2.count AS item_count,
+    t2.supplier_name,
+    t2.base_price,
+    COALESCE(t9.value, 0) AS ff_fee_value_per_item,
+    COALESCE(t10.value, 0) AS socket_adapter_fee_value_per_item,
+    t2.margin_percent,
+    t2.final_price,
+    t2.buyer_price,
+    COALESCE(t2.subsidy, 0) AS subsidy,
+    COALESCE(t6.market_services, 0) AS market_services,
+    t6.payment_status IN ('Переведён', 'Не будет переведён из-за отмены заказа', 'Удержан из платежей покупателей') AS is_payment_status_relevant_for_res29,
+    COALESCE(t7.our_discount, 0) AS our_discount,
+    COALESCE(t7.market_discount, 0) AS market_discount,
+    COALESCE(t7.other_market_discounts, 0) AS other_market_discounts,
+    COALESCE(t7.market_discount_sber, 0) AS market_discount_sber,
+    COALESCE(t7.market_discount_ya_plus, 0) AS market_discount_ya_plus,
+    COALESCE(t7.customer_refund_amount, 0) AS customer_refund_amount,
+
+    t2.total_sum_of_all_added_costs,
+    t2.markup_ff_fees_amount,
+    t2.markup_yandex_accepting_payments_fee_amount,
+    t2.markup_yandex_order_processing_fee_amount,
+    t2.markup_socket_adapter_fee_amount,
+    t2.markup_custom_delivery_fee_value_amount,
+    t2.markup_margin_amount,
+    t2.commission_yandex_category_fee_amount,
+    t2.commission_yandex_transfer_payments_fee_amount,
+    t2.commission_yandex_delivery_fee_actual_amount
+  FROM
+    e_commerce.e_com.ya_orders AS t1
+    JOIN e_commerce.e_com.ya_order_items AS t2 ON t1.id = t2.order_id
+    JOIN e_commerce.e_com.platform_sellers AS t5 ON t1.seller_id = t5.id
+    JOIN e_commerce.e_com.yandex_feed_items AS t3 ON t2.feed_item_id = t3.id
+    JOIN e_commerce.e_com.unique_product_groups AS t4 ON t3.unique_product_group_id = t4.id
+    LEFT OUTER JOIN e_commerce.e_com.ya_order_margin_report AS t6 ON t1.id = t6.ya_orders_id
+    LEFT OUTER JOIN e_commerce.e_com.ya_order_transactions_report AS t7 ON t2.id = t7.ya_order_items_id
+    LEFT OUTER JOIN e_commerce.e_com.market_modifier_yandex AS t8 ON t3.market_modifier_yandex_id = t8.id
+    LEFT OUTER JOIN e_commerce.e_com.ff_fees AS t9 ON t8.ff_fees_id = t9.id
+    LEFT OUTER JOIN e_commerce.e_com.socket_adapter_fee AS t10 ON t8.socket_adapter_fee_id = t10.id
+),
+-- 2. CTE для агрегированных данных из отчетов по платежам (ya_payments_reports) - для специфичных сумм
+payments_agg_cte AS (
+  SELECT
+    t12.ya_orders_id AS order_pk,
+    sum(CASE WHEN (t12.transaction_source = 'Баллы за скидку Маркета' OR t12.transaction_source = 'Баллы за скидку Яндекс Плюс' OR t12.transaction_source = 'Возврат скидки за участие в совместных акциях') THEN t12.transaction_amount ELSE 0 END) AS sum_e20_bonus_points,
+    sum(CASE WHEN (t12.transaction_source = 'Скидка за участие в совместных акциях' OR t12.transaction_source = 'Возврат баллов за скидку Маркета') THEN t12.transaction_amount ELSE 0 END) AS sum_e21_promo_discount,
+    sum(CASE WHEN (t12.item_name_or_service_name IN ('Отмена заказа по вине продавца') AND t12.transaction_source IN ('Оплата услуг Яндекс.Маркета') AND t12.payment_status IN ('Удержан из платежей покупателей')) THEN t12.transaction_amount ELSE 0 END) AS sum_e47_seller_cancel_fee,
+    sum(CASE WHEN (t12.item_name_or_service_name IN ('Отгрузка или доставка не вовремя') AND t12.transaction_source IN ('Оплата услуг Яндекс.Маркета') AND t12.payment_status IN ('Удержан из платежей покупателей')) THEN t12.transaction_amount ELSE 0 END) AS sum_e48_late_ship_fee
+  FROM
+    e_commerce.e_com.ya_payments_reports AS t12
+  GROUP BY
+    t12.ya_orders_id
+),
+-- 3. CTE для промежуточных вычислений на уровне позиции заказа
+item_level_calculations AS (
+    SELECT
+        oib.original_order_id_numeric,
+        oib.offer_id,
+        oib.order_item_identifier,
+        CASE
+            WHEN (oib.margin_report_status IN ('Заказ отменен до обработки', 'Невыкуп принят на складе', 'Отменен при обработке', 'Полный возврат принят на складе', 'Отменен при доставке') OR oib.margin_report_payment_status = 'Не будет переведён из-за отмены заказа')
+            THEN 0 - oib.market_services
+            ELSE (((((( (oib.buyer_price + oib.subsidy) * oib.item_count - oib.market_services)
+                    - oib.our_discount)
+                    - oib.market_discount)
+                    - oib.other_market_discounts)
+                    - oib.market_discount_sber)
+                    - oib.market_discount_ya_plus)
+                    + oib.customer_refund_amount
+        END AS e72_component_value,
+        CASE
+            WHEN (oib.margin_report_status IN ('Невыкуп принят на складе', 'Полный возврат принят на складе', 'Отменен при доставке'))
+            THEN oib.ff_fee_value_per_item * oib.item_count
+            ELSE CASE
+                WHEN (oib.margin_report_status IN ('Заказ отменен до обработки', 'Отменен при обработке'))
+                THEN 0
+                ELSE oib.base_price * oib.item_count
+            END
+        END AS e73_component_value,
+        CASE
+            WHEN (oib.margin_report_status IN ('Заказ отменен до обработки', 'Невыкуп принят на складе', 'Отменен при обработке', 'Полный возврат принят на складе', 'Отменен при доставке') OR oib.margin_report_payment_status = 'Не будет переведён из-за отмены заказа')
+            THEN 0
+            ELSE oib.final_price * oib.item_count - oib.base_price * oib.item_count * (CAST(oib.margin_percent AS DOUBLE PRECISION) / 100 + 1)
+        END AS e66_component_value
+    FROM order_item_base oib
+),
+-- 4. CTE для агрегатов (AVG) на уровне (order_id, offer_id)
+item_level_aggregates_cte AS (
+    SELECT
+        original_order_id_numeric,
+        offer_id,
+        AVG(e72_component_value) AS avg_e72_val,
+        AVG(e73_component_value) AS avg_e73_val,
+        AVG(e66_component_value) AS avg_e46_val
+    FROM item_level_calculations
+    GROUP BY original_order_id_numeric, offer_id
+),
+-- 5. CTE для общей суммы выплат и максимальной даты выплаты по заказу
+payment_summary_cte AS (
+  SELECT
+    order_id AS original_order_id_numeric,
+    MAX(payment_date) AS raw_max_payment_date,
+    SUM(CASE WHEN payment_date IS NOT NULL THEN transaction_amount ELSE 0 END) AS total_payout_amount
+  FROM
+    e_commerce.e_com.ya_payments_reports
+  WHERE
+    order_id IS NOT NULL
+  GROUP BY
+    order_id
+),
+-- 6. CTE для сборки всех данных перед финальной агрегацией
+assembled_item_data AS (
+  SELECT
+    oib.order_item_identifier,
+    oib.created_at,
+    oib.shipment_date, -- <<<< ИЗМЕНЕНИЕ 2: Передаем поле дальше
+    oib.seller_name,
+    oib.original_order_id_numeric,
+    oib.offer_id,
+    oib.product_name,
+    oib.effective_order_status,
+    oib.margin_report_status,
+    oib.margin_report_payment_status,
+    oib.item_count,
+    oib.supplier_name,
+    oib.base_price,
+    oib.ff_fee_value_per_item,
+    oib.socket_adapter_fee_value_per_item,
+    oib.margin_percent,
+    oib.final_price,
+    oib.buyer_price,
+    oib.subsidy,
+    oib.market_services,
+    oib.is_payment_status_relevant_for_res29,
+    pay.sum_e20_bonus_points,
+    pay.sum_e21_promo_discount,
+    ila.avg_e72_val,
+    ila.avg_e73_val,
+    ila.avg_e46_val,
+    pay.sum_e47_seller_cancel_fee,
+    pay.sum_e48_late_ship_fee,
+    ps.total_payout_amount AS order_total_payout_amount,
+    ps.raw_max_payment_date AS order_raw_max_payment_date,
+
+    oib.total_sum_of_all_added_costs,
+    oib.markup_ff_fees_amount,
+    oib.markup_yandex_accepting_payments_fee_amount,
+    oib.markup_yandex_order_processing_fee_amount,
+    oib.markup_socket_adapter_fee_amount,
+    oib.markup_custom_delivery_fee_value_amount,
+    oib.markup_margin_amount,
+    oib.commission_yandex_category_fee_amount,
+    oib.commission_yandex_transfer_payments_fee_amount,
+    oib.commission_yandex_delivery_fee_actual_amount
+  FROM
+    order_item_base oib
+    LEFT JOIN payments_agg_cte pay ON oib.order_pk = pay.order_pk
+    LEFT JOIN item_level_aggregates_cte ila ON oib.original_order_id_numeric = ila.original_order_id_numeric AND oib.offer_id = ila.offer_id
+    LEFT JOIN payment_summary_cte ps ON oib.original_order_id_numeric = ps.original_order_id_numeric
+)
+-- Финальный SELECT с явной агрегацией по order_item_identifier
+SELECT
+  aid.order_item_identifier,
+  MAX(aid.created_at) AS created_at_res0,
+  MAX(aid.shipment_date) AS original_shipment_date, -- <<<< ИЗМЕНЕНИЕ 3: Выводим поле в результат
+  MAX(aid.seller_name) AS seller_name_res1,
+  MAX(TO_CHAR(aid.original_order_id_numeric, 'FMMI99999999999999999999')) AS original_order_id_str_res2,
+  MAX(aid.offer_id) AS offer_id_res3,
+  MAX(aid.product_name) AS product_name_res4,
+  MAX(aid.effective_order_status) AS effective_order_status_res5,
+  MAX(aid.margin_report_status) AS margin_report_status_res6,
+  MAX(aid.margin_report_payment_status) AS margin_report_payment_status_res7,
+  MAX(aid.item_count) AS item_count_res8,
+  MAX(aid.supplier_name) AS supplier_name_res9,
+  MAX(aid.base_price * aid.item_count) AS base_price_total_res10,
+  MAX(aid.ff_fee_value_per_item * aid.item_count) AS ff_fee_total_res11,
+  MAX(aid.socket_adapter_fee_value_per_item * aid.item_count) AS socket_adapter_fee_total_res12,
+  MAX(aid.base_price * aid.item_count * (CAST(aid.margin_percent AS DOUBLE PRECISION) / 100 + 1)) AS price_with_margin_res13,
+  MAX(aid.margin_percent) AS margin_percent_res14,
+  MAX(aid.final_price * aid.item_count) AS final_price_total_res15,
+  MAX(CASE
+    WHEN (aid.margin_report_status IN ('Заказ отменен до обработки', 'Невыкуп принят на складе', 'Отменен при обработке', 'Полный возврат принят на складе', 'Отменен при доставке') OR aid.margin_report_payment_status = 'Не будет переведён из-за отмены заказа')
+    THEN 0
+    ELSE aid.base_price * aid.item_count * (CAST(aid.margin_percent AS DOUBLE PRECISION) / 100)
+  END) AS margin_value_res16,
+  MAX((aid.buyer_price + COALESCE(aid.subsidy,0)) * aid.item_count) AS buyer_price_plus_subsidy_total_res17,
+  MAX(COALESCE(aid.sum_e20_bonus_points, 0)) AS sum_e20_bonus_points_res18,
+  MAX(aid.market_services) AS market_services_res19,
+  MAX((aid.buyer_price + COALESCE(aid.subsidy,0)) * aid.item_count - (aid.final_price * aid.item_count)) AS price_diff_res20,
+  MAX(COALESCE(aid.sum_e21_promo_discount, 0)) AS sum_e21_promo_discount_res21,
+  MAX(COALESCE(aid.avg_e72_val, 0) + COALESCE(aid.sum_e20_bonus_points, 0) + COALESCE(aid.sum_e21_promo_discount, 0)) AS calc_val_res22,
+  MAX((COALESCE(aid.avg_e72_val, 0) + COALESCE(aid.sum_e20_bonus_points, 0) + COALESCE(aid.sum_e21_promo_discount, 0)) - COALESCE(aid.avg_e73_val, 0)) AS calc_val_minus_e73_res23,
+  MAX(CASE
+    WHEN (COALESCE(aid.avg_e46_val, 0) = 0) THEN 0
+    ELSE ((((COALESCE(aid.avg_e72_val, 0) + COALESCE(aid.sum_e20_bonus_points, 0) + COALESCE(aid.sum_e21_promo_discount, 0)) - COALESCE(aid.avg_e73_val, 0)) - COALESCE(aid.avg_e46_val, 0)) / NULLIF(COALESCE(aid.avg_e46_val, 0),0)) * 100
+  END) AS calc_percent_res24,
+  MAX(COALESCE(aid.avg_e72_val, 0)) AS avg_e72_val_res25,
+  MAX(COALESCE(aid.avg_e72_val, 0) - COALESCE(aid.avg_e73_val, 0)) AS avg_e72_minus_e73_res26,
+  MAX(COALESCE(aid.sum_e47_seller_cancel_fee, 0)) AS seller_cancel_fee_res27,
+  MAX(COALESCE(aid.sum_e48_late_ship_fee, 0)) AS late_ship_fee_res28,
+  MAX(CASE WHEN aid.is_payment_status_relevant_for_res29 THEN COALESCE(aid.avg_e72_val, 0) ELSE 0 END) AS conditional_avg_e72_res29,
+  MAX(COALESCE(aid.order_total_payout_amount, 0)) AS sum_vyplat,
+  MAX(aid.order_raw_max_payment_date) AS data_vyplat,
+
+  MAX(COALESCE(aid.total_sum_of_all_added_costs, 0)) AS total_sum_of_all_added_costs,
+  MAX(COALESCE(aid.markup_ff_fees_amount, 0)) AS markup_ff_fees_amount,
+  MAX(COALESCE(aid.markup_yandex_accepting_payments_fee_amount, 0)) AS markup_yandex_accepting_payments_fee_amount,
+  MAX(COALESCE(aid.markup_yandex_order_processing_fee_amount, 0)) AS markup_yandex_order_processing_fee_amount,
+  MAX(COALESCE(aid.markup_socket_adapter_fee_amount, 0)) AS markup_socket_adapter_fee_amount,
+  MAX(COALESCE(aid.markup_custom_delivery_fee_value_amount, 0)) AS markup_custom_delivery_fee_value_amount,
+  MAX(COALESCE(aid.markup_margin_amount, 0)) AS markup_margin_amount,
+  MAX(COALESCE(aid.commission_yandex_category_fee_amount, 0)) AS commission_yandex_category_fee_amount,
+  MAX(COALESCE(aid.commission_yandex_transfer_payments_fee_amount, 0)) AS commission_yandex_transfer_payments_fee_amount,
+  MAX(COALESCE(aid.commission_yandex_delivery_fee_actual_amount, 0)) AS commission_yandex_delivery_fee_actual_amount
+FROM
+  assembled_item_data aid
+GROUP BY
+  aid.order_item_identifier
+ORDER BY
+  created_at_res0 DESC NULLS LAST,
+  seller_name_res1 ASC NULLS FIRST,
+  original_order_id_str_res2 ASC NULLS FIRST,
+  offer_id_res3 ASC NULLS FIRST,
+  aid.order_item_identifier ASC NULLS FIRST
+) AS t1
+GROUP BY
+  res_0,
+  res_1,
+  res_2,
+  res_3,
+  res_4,
+  res_5,
+  res_6,
+  res_7,
+  res_8,
+  res_9,
+  res_10,
+  res_11,
+  res_12,
+  res_13,
+  res_14,
+  res_15,
+  res_16,
+  res_17,
+  res_18,
+  res_19,
+  res_20,
+  res_21,
+  res_22,
+  res_23,
+  res_24,
+  res_25,
+  res_26,
+  res_27,
+  res_28,
+  res_29,
+  res_30,
+  res_31,
+  res_32,
+  res_33,
+  res_34
+ORDER BY res_0 DESC NULLS LAST
+LIMIT 1000001
+```
+
+Тело запроса:
+```
+{
+  "fields": [
+    {
+      "ref": {
+        "type": "id",
+        "id": "created_at_res0_rq6j"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "original_shipment_date_vzse"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "seller_name_res1_4z62"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "original_order_id_str_res2_kjoh"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "offer_id_res3_omu8"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "product_name_res4_h4lr"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "effective_order_status_res5_cy75"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "margin_report_status_res6_nknh"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "margin_report_payment_status_res7_ot8a"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "item_count_res8_6fk8"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "supplier_name_res9_z6w3"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "base_price_total_res10_1py4"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "ff_fee_total_res11_c2bf"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "socket_adapter_fee_total_res12_6cap"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "price_with_margin_res13_2r2b"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "margin_percent_res14_zqgo"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "final_price_total_res15_wfc4"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "margin_value_res16_e994"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "buyer_price_plus_subsidy_total_res17_n6t7"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "sum_e20_bonus_points_res18_6ktv"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "market_services_res19_u3w0"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "price_diff_res20_vkrw"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "954dc770-4071-11f0-8c94-dffd67a08d91"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "sum_e21_promo_discount_res21_imi6"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "calc_val_res22_aapz"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "calc_val_minus_e73_res23_obdd"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "calc_percent_res24_zhec"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "avg_e72_val_res25_hhwo"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "avg_e72_minus_e73_res26_0486"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "seller_cancel_fee_res27_q4l5"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "late_ship_fee_res28_9jvd"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "conditional_avg_e72_res29_v924"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "sum_vyplat_iesf"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "data_vyplat_d65h"
+      },
+      "block_id": 0
+    },
+    {
+      "ref": {
+        "type": "id",
+        "id": "3a835560-3565-11f0-88e0-1ba98cf4fc43"
+      },
+      "block_id": 0
+    }
+  ],
+  "filters": [],
+  "order_by": [
+    {
+      "ref": {
+        "type": "id",
+        "id": "created_at_res0_rq6j"
+      },
+      "direction": "desc",
+      "block_id": 0
+    }
+  ],
+  "parameter_values": [],
+  "updates": [
+    {
+      "action": "add_field",
+      "field": {
+        "hidden": false,
+        "aggregation_locked": true,
+        "virtual": false,
+        "autoaggregated": false,
+        "cast": "float",
+        "description": "",
+        "aggregation": "none",
+        "type": "DIMENSION",
+        "guid": "3a835560-3565-11f0-88e0-1ba98cf4fc43",
+        "managed_by": "user",
+        "data_type": "float",
+        "initial_data_type": "float",
+        "valid": true,
+        "has_auto_aggregation": false,
+        "lock_aggregation": false,
+        "title": "Фактическая прибыль",
+        "guid_formula": "IF [data_vyplat_d65h] IS NULL\nTHEN 0\nELSE\n\n    IF\n        [margin_report_status_res6_nknh] IN ('Отменен при обработке', 'Полный возврат принят на складе', 'Заказ отменен до обработки') OR [margin_report_payment_status_res7_ot8a] = 'Не будет переведён из-за отмены заказа'\n    THEN\n        [sum_vyplat_iesf]\n    ELSE\n\n        IF\n            [margin_report_payment_status_res7_ot8a] = 'Будет переведён'\n        THEN\n            [sum_vyplat_iesf]\n        ELSE\n            [sum_vyplat_iesf] - [socket_adapter_fee_total_res12_6cap] - [ff_fee_total_res11_c2bf] - [base_price_total_res10_1py4]\n        END\n        \n    END\n\nEND",
+        "formula": "IF [Дата выплаты] IS NULL\nTHEN 0\nELSE\n\n    IF\n        [Статус заказа 2] IN ('Отменен при обработке', 'Полный возврат принят на складе', 'Заказ отменен до обработки') OR [Статус платежа] = 'Не будет переведён из-за отмены заказа'\n    THEN\n        [Сумма выплаты (если нет даты, то ожидаемая)]\n    ELSE\n\n        IF\n            [Статус платежа] = 'Будет переведён'\n        THEN\n            [Сумма выплаты (если нет даты, то ожидаемая)]\n        ELSE\n            [Сумма выплаты (если нет даты, то ожидаемая)] - [Цена переходника] - [Цена упаковки] - [Цена закупки]\n        END\n        \n    END\n\nEND",
+        "calc_mode": "formula",
+        "source": "",
+        "local": true,
+        "datasetId": "4k8b5s6fi3p0q"
+      },
+      "debug_info": "merged-update"
+    },
+    {
+      "action": "add_field",
+      "field": {
+        "hidden": false,
+        "aggregation_locked": true,
+        "virtual": false,
+        "autoaggregated": false,
+        "cast": "float",
+        "description": "",
+        "aggregation": "none",
+        "type": "DIMENSION",
+        "guid": "954dc770-4071-11f0-8c94-dffd67a08d91",
+        "managed_by": "user",
+        "data_type": "float",
+        "initial_data_type": "float",
+        "valid": true,
+        "has_auto_aggregation": false,
+        "lock_aggregation": false,
+        "title": "Расчётные комиссии",
+        "guid_formula": "[markup_yandex_accepting_payments_fee_0w7y]+[markup_yandex_order_processing_fee_a_3c5w]+[commission_yandex_transfer_payments__tdmg]+[commission_yandex_category_fee_amoun_auq7]+[commission_yandex_delivery_fee_actua_2kej]+[markup_custom_delivery_fee_value_amo_b6a5]",
+        "formula": "[Комиссии приём платежей (расчёт)]+[Комиссии обработка заказа (расчёт)]+[Комиссии за перевод платежа (расчёт)]+[Комиссии за категорию (расчёт)]+[Комиссии доставка 2 (расчёт)]+[Комиссии доставка (расчёт)]",
+        "calc_mode": "formula",
+        "source": "",
+        "local": true,
+        "datasetId": "4k8b5s6fi3p0q"
+      }
+    }
+  ],
+  "ignore_nonexistent_filters": true,
+  "with_totals": false,
+  "autofill_legend": true
+}
+```

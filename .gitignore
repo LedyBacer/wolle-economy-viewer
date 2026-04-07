@@ -138,6 +138,12 @@ celerybeat.pid
 .env
 .envrc
 .venv
+
+# Project-specific
+data/uploads/
+*.xlsx
+*.xls
+.streamlit/secrets.toml
 env/
 venv/
 ENV/
