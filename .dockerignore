@@ -6,7 +6,13 @@ __pycache__
 .gitignore
 .env
 .DS_Store
+**/.DS_Store
 .claude
 data/uploads
 *.md
 !CLAUDE.md
+.ruff_cache
+.mypy_cache
+.pytest_cache
+.pre-commit-config.yaml
+tests/

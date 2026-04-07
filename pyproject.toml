@@ -1,0 +1,79 @@
+[project]
+name = "wolle-economy-viewer"
+version = "0.1.0"
+description = "Streamlit-дашборд для анализа юнит-экономики заказов Яндекс Маркет"
+requires-python = ">=3.12"
+dependencies = [
+    "streamlit>=1.35.0",
+    "pandas>=2.2.0",
+    "openpyxl>=3.1.0",
+    "xlrd>=2.0.1",
+    "psycopg2-binary>=2.9.9",
+    "sqlalchemy>=2.0.0",
+    "plotly>=5.22.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "mypy>=1.10.0",
+    "pandas-stubs>=2.2.0",
+    "ruff>=0.4.0",
+    "pre-commit>=3.7.0",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff: линтер + форматтер
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "C4",  # flake8-comprehensions
+    "PIE", # flake8-pie
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "E501",   # line too long — handled by formatter
+    "B008",   # do not perform function calls in default arguments (Streamlit pattern)
+    "RUF012", # mutable class variables — pandas usage
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["db", "economics"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ---------------------------------------------------------------------------
+# Mypy: статическая типизация
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = false
+warn_return_any = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_optional = true
+ignore_missing_imports = true   # для пакетов без stub-ов (streamlit, plotly)
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
