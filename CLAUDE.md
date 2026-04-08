@@ -6,21 +6,40 @@ Streamlit-приложение для анализа юнит-экономики
 ## Структура проекта
 
 ```
-app.py              # точка входа Streamlit (st.set_page_config только здесь)
-economics.py        # расчёт всех финансовых метрик (чистые функции)
-db/
-  connection.py     # SQLAlchemy-подключение (env-переменные)
-  queries.py        # SQL-запросы: ORDER_ITEMS_SQL, PAYMENT_AGGREGATES_SQL, SELLERS_SQL
-pages/
-  1_Заказы.py       # таблица заказов с фильтрами и метриками
-  2_Аналитика.py    # дашборд: по магазинам, топ товаров, статусы, промо, динамика
+src/wolle_economy/
+  __init__.py          # __version__
+  config.py            # Pydantic Settings: DB creds, low_quality_sellers, cache_ttl
+  enums.py             # FulfillmentStatus, PaymentStatus и frozenset-константы
+  db/
+    engine.py          # @lru_cache get_engine() — singleton SQLAlchemy Engine
+    queries.py         # ORDER_ITEMS_SQL, PAYMENT_AGGREGATES_SQL, SELLERS_SQL
+  domain/
+    economics.py       # calc_economics + _compute_* (чистые функции)
+    loader.py          # load_orders() — единственный источник данных для UI
+  ui/
+    app.py             # точка входа Streamlit (st.set_page_config только здесь)
+    formatters.py      # fmt_money, fmt_pct
+    helpers.py         # orders_dedup, show_data_quality_warning
+    columns.py         # COLUMN_LABELS, DISPLAY_COLUMNS
+    pages/
+      1_Заказы.py      # таблица заказов с фильтрами и метриками
+      2_Аналитика.py   # KPI-дашборд, ABC, возвраты, тренды
+tests/
+  conftest.py          # синтетические DataFrame-фикстуры (БД не нужна)
+  test_economics.py    # 53 теста формул юнит-экономики
 ```
 
 ## Команды
 
 ```bash
-.venv/bin/streamlit run app.py      # запуск
-.venv/bin/pip install -r requirements.txt
+# Первичная установка (создаёт редактируемый пакет в venv)
+.venv/bin/pip install -e .[dev]
+
+# Запуск приложения
+.venv/bin/streamlit run src/wolle_economy/ui/app.py
+
+# Тесты
+.venv/bin/pytest
 ```
 
 ## Переменные окружения

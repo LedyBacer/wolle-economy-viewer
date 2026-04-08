@@ -4,13 +4,21 @@ Wolle — Юнит-экономика Яндекс Маркет.
 и навигацией к детальным разделам.
 """
 
+import logging
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from config import get_settings
-from domain.loader import load_orders
-from ui.formatters import fmt_money, fmt_pct
-from ui.helpers import orders_dedup
+from sqlalchemy.exc import SQLAlchemyError
+
+from wolle_economy.config import get_settings
+from wolle_economy.domain.loader import load_orders
+from wolle_economy.logging_setup import setup_logging
+from wolle_economy.ui.formatters import fmt_money, fmt_pct
+from wolle_economy.ui.helpers import orders_dedup, show_load_error
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 st.set_page_config(
     page_title="Wolle — Юнит-экономика",
@@ -105,9 +113,22 @@ def main() -> None:
 
     try:
         df = load_orders()
-    except Exception as e:
-        st.error(f"Не удалось загрузить данные: {e}")
+    except SQLAlchemyError as e:
+        show_load_error(
+            title="Не удалось загрузить данные из базы данных.",
+            exc=e,
+            details="Проверьте `.env`/переменные окружения и доступность PostgreSQL.",
+        )
         st.stop()
+        return
+    except (ValueError, KeyError, TypeError) as e:
+        show_load_error(
+            title="Данные из БД имеют неожиданный формат.",
+            exc=e,
+            details="Проверьте актуальность схемы/запросов и наличие нужных колонок.",
+        )
+        st.stop()
+        return
 
     df_clean = df[~df["seller_name"].isin(get_settings().low_quality_sellers)]
     if df_clean.empty:

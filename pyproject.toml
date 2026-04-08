@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "wolle-economy-viewer"
 version = "0.1.0"
@@ -6,12 +10,14 @@ requires-python = ">=3.12"
 dependencies = [
     "streamlit>=1.35.0",
     "pandas>=2.2.0",
+    "numpy>=1.26.0",
     "openpyxl>=3.1.0",
     "xlrd>=2.0.1",
     "psycopg2-binary>=2.9.9",
     "sqlalchemy>=2.0.0",
     "plotly>=5.22.0",
     "python-dotenv>=1.0.0",
+    "pydantic-settings>=2.3.0",
 ]
 
 [project.optional-dependencies]
@@ -20,9 +26,13 @@ dev = [
     "pytest-cov>=5.0.0",
     "mypy>=1.10.0",
     "pandas-stubs>=2.2.0",
+    "numpy>=1.26.0",
     "ruff>=0.4.0",
     "pre-commit>=3.7.0",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 # ---------------------------------------------------------------------------
 # Ruff: линтер + форматтер
@@ -48,10 +58,13 @@ ignore = [
     "E501",   # line too long — handled by formatter
     "B008",   # do not perform function calls in default arguments (Streamlit pattern)
     "RUF012", # mutable class variables — pandas usage
+    "RUF001", # ambiguous unicode characters — Russian UI text is expected
+    "RUF002", # ambiguous unicode characters in docstrings — Russian docs are expected
+    "RUF003", # ambiguous unicode characters in comments — Russian comments are expected
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["db", "economics"]
+known-first-party = ["wolle_economy"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -62,6 +75,7 @@ indent-style = "space"
 # ---------------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.12"
+files = ["src/wolle_economy"]
 strict = false
 warn_return_any = true
 warn_unused_ignores = true
@@ -77,3 +91,4 @@ ignore_missing_imports = true   # для пакетов без stub-ов (stream
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+pythonpath = ["src", "."]

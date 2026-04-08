@@ -1,14 +1,30 @@
 """
 SQL-запросы к базе данных.
 Намеренно разбиты на отдельные запросы для читаемости и поддерживаемости.
+
+Фильтрация на уровне БД (seller_ids, date_from, date_to) уменьшает объём
+данных, передаваемых по сети, и снижает нагрузку на Python-слой.
 """
+
+from __future__ import annotations
+
+import datetime
+from typing import Any
+
 from sqlalchemy import text
 
+try:
+    # SQLAlchemy 2.x
+    from sqlalchemy.sql.elements import TextClause
+except ImportError:  # pragma: no cover
+    # Fallback for older SQLAlchemy
+    from sqlalchemy.sql.expression import TextClause
+
+
 # ---------------------------------------------------------------------------
-# Запрос 1: Базовые данные по позициям заказов
-# Один ряд = одна позиция заказа (offer_id внутри заказа)
+# Базовый SELECT для позиций заказов (без WHERE и ORDER BY)
 # ---------------------------------------------------------------------------
-ORDER_ITEMS_SQL = text("""
+_ORDER_ITEMS_SELECT = """
 SELECT
     -- Идентификаторы
     o.id                          AS ya_order_id,
@@ -94,15 +110,50 @@ LEFT JOIN e_com.ff_fees ff
     ON mm.ff_fees_id = ff.id
 LEFT JOIN e_com.socket_adapter_fee sa
     ON mm.socket_adapter_fee_id = sa.id
-ORDER BY o.created_at DESC
-""")
+"""
+
+
+def build_order_items_query(
+    seller_ids: tuple[int, ...] | None = None,
+    date_from: datetime.date | None = None,
+    date_to: datetime.date | None = None,
+) -> tuple[TextClause, dict[str, Any]]:
+    """
+    Возвращает (sql, params) для запроса позиций заказов.
+
+    Параметры фильтрации передаются как bind-параметры SQLAlchemy,
+    что исключает SQL-инъекции и позволяет БД переиспользовать plan.
+
+    Args:
+        seller_ids: кортеж ID продавцов для фильтрации; None — все продавцы.
+        date_from:  нижняя граница created_at (включительно); None — без ограничения.
+        date_to:    верхняя граница created_at (включительно по дню); None — без ограничения.
+    """
+    conditions: list[str] = []
+    params: dict[str, Any] = {}
+
+    if seller_ids:
+        conditions.append("o.seller_id = ANY(:seller_ids)")
+        params["seller_ids"] = list(seller_ids)
+
+    if date_from is not None:
+        conditions.append("o.created_at >= :date_from")
+        params["date_from"] = date_from
+
+    if date_to is not None:
+        # date_to включительно: берём начало следующего дня
+        conditions.append("o.created_at < :date_to_exclusive")
+        params["date_to_exclusive"] = date_to + datetime.timedelta(days=1)
+
+    where = ("\nWHERE " + "\n  AND ".join(conditions)) if conditions else ""
+    sql = text(_ORDER_ITEMS_SELECT + where + "\nORDER BY o.created_at DESC")
+    return sql, params
 
 
 # ---------------------------------------------------------------------------
-# Запрос 2: Агрегированные данные о платежах по заказам
-# Из ya_payments_reports — фактические комиссии, штрафы, даты выплат
+# Агрегаты платежей — фильтруется по тому же набору заказов через подзапрос
 # ---------------------------------------------------------------------------
-PAYMENT_AGGREGATES_SQL = text("""
+_PAYMENT_AGGREGATES_SELECT = """
 SELECT
     ya_orders_id,
     MAX(payment_date) AS last_payment_date,
@@ -148,8 +199,6 @@ SELECT
     -- Новый формат: transaction_source = 'Скидка за участие в совместных акциях'.
     -- Старый формат: transaction_source IS NULL AND payment_status = 'Списание'.
     -- Результат ОТРИЦАТЕЛЬНЫЙ — это наши расходы (вычитаются из прибыли).
-    -- Lifetime по заказу: берём все записи вне зависимости от периода,
-    -- т.к. промо-списания могут попасть в другой отчётный период.
     SUM(CASE
         WHEN transaction_source = 'Скидка за участие в совместных акциях'
           OR (transaction_source IS NULL AND payment_status = 'Списание')
@@ -158,8 +207,56 @@ SELECT
 
 FROM e_com.ya_payments_reports
 WHERE ya_orders_id IS NOT NULL
-GROUP BY ya_orders_id
-""")
+"""
+
+
+def build_payment_aggregates_query(
+    seller_ids: tuple[int, ...] | None = None,
+    date_from: datetime.date | None = None,
+    date_to: datetime.date | None = None,
+) -> tuple[TextClause, dict[str, Any]]:
+    """
+    Возвращает (sql, params) для запроса агрегированных данных о платежах.
+
+    Когда переданы seller_ids или даты — добавляет подзапрос к ya_orders,
+    чтобы не тянуть строки платежей для нерелевантных заказов.
+    """
+    params: dict[str, Any] = {}
+    extra_conditions: list[str] = []
+
+    if seller_ids or date_from is not None or date_to is not None:
+        sub_conditions = ["o2.id = p.ya_orders_id"]
+
+        if seller_ids:
+            sub_conditions.append("o2.seller_id = ANY(:seller_ids)")
+            params["seller_ids"] = list(seller_ids)
+
+        if date_from is not None:
+            sub_conditions.append("o2.created_at >= :date_from")
+            params["date_from"] = date_from
+
+        if date_to is not None:
+            sub_conditions.append("o2.created_at < :date_to_exclusive")
+            params["date_to_exclusive"] = date_to + datetime.timedelta(days=1)
+
+        sub_where = " AND ".join(sub_conditions)
+        extra_conditions.append(f"EXISTS (SELECT 1 FROM e_com.ya_orders o2 WHERE {sub_where})")
+
+    # Алиас p нужен для подзапроса выше
+    base = _PAYMENT_AGGREGATES_SELECT.replace(
+        "FROM e_com.ya_payments_reports",
+        "FROM e_com.ya_payments_reports p",
+    ).replace(
+        "WHERE ya_orders_id IS NOT NULL",
+        "WHERE p.ya_orders_id IS NOT NULL",
+    )
+
+    if extra_conditions:
+        base += "  AND " + "\n  AND ".join(extra_conditions) + "\n"
+
+    base += "GROUP BY p.ya_orders_id"
+    sql = text(base)
+    return sql, params
 
 
 # ---------------------------------------------------------------------------
@@ -169,4 +266,15 @@ SELLERS_SQL = text("""
 SELECT id, seller_name
 FROM e_com.platform_sellers
 ORDER BY seller_name
+""")
+
+
+# ---------------------------------------------------------------------------
+# Запрос 4: Диапазон дат заказов (для инициализации date picker)
+# ---------------------------------------------------------------------------
+DATE_RANGE_SQL = text("""
+SELECT
+    MIN(created_at)::date AS min_date,
+    MAX(created_at)::date AS max_date
+FROM e_com.ya_orders
 """)

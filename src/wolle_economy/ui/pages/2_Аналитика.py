@@ -3,33 +3,54 @@
 ценообразование, денежный поток, операционные метрики и тренды.
 """
 
+import datetime
+import logging
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from config import get_settings
-from domain.loader import load_orders
-from ui.formatters import fmt_money, fmt_pct
-from ui.helpers import orders_dedup
+from sqlalchemy.exc import SQLAlchemyError
+
+from wolle_economy.config import get_settings
+from wolle_economy.domain.loader import load_date_range, load_orders, load_sellers
+from wolle_economy.logging_setup import setup_logging
+from wolle_economy.ui.formatters import fmt_money, fmt_pct
+from wolle_economy.ui.helpers import orders_dedup, show_load_error
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
 # Фильтры
 # ---------------------------------------------------------------------------
-def sidebar_filters(df: pd.DataFrame) -> pd.DataFrame:
+def sidebar_db_filters() -> tuple[
+    tuple[int, ...] | None,
+    datetime.date,
+    datetime.date,
+    bool,
+]:
+    """
+    Рендерит фильтры по продавцу и дате.
+    Возвращает (seller_ids, date_from, date_to) для DB-запроса.
+    """
+    sellers_df = load_sellers()
+    min_date, max_date = load_date_range()
+
     with st.sidebar:
         st.header("Фильтры")
 
-        sellers = sorted(df["seller_name"].dropna().unique())
-        sel_sellers = st.multiselect("Магазин", sellers, default=sellers)
+        all_names = sellers_df["seller_name"].tolist()
+        sel_names = st.multiselect("Магазин", all_names, default=all_names)
 
-        dates = df["created_at"].dropna()
-        if not dates.empty:
-            d_min, d_max = dates.min().date(), dates.max().date()
-            date_range = st.date_input("Период (дата заказа)", (d_min, d_max), d_min, d_max)
-        else:
-            date_range = None
+        date_range = st.date_input(
+            "Период (дата заказа)",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date,
+        )
 
         exclude_low_quality = st.checkbox(
             "Исключить магазины без margin_report",
@@ -37,16 +58,25 @@ def sidebar_filters(df: pd.DataFrame) -> pd.DataFrame:
             help="WolleBuy и ТехноПравда Гонконг — для них нет точных данных о выручке/комиссиях",
         )
 
-    mask = df["seller_name"].isin(sel_sellers)
-    if date_range and len(date_range) == 2:
-        d_from = pd.Timestamp(date_range[0], tz="UTC")
-        d_to = pd.Timestamp(date_range[1], tz="UTC") + pd.Timedelta(days=1)
-        mask &= df["created_at"].between(d_from, d_to)
+    if set(sel_names) == set(all_names):
+        seller_ids = None
+    else:
+        id_map = sellers_df.set_index("seller_name")["id"]
+        seller_ids = tuple(int(id_map[n]) for n in sel_names if n in id_map)
 
+    if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+        date_from, date_to = date_range[0], date_range[1]
+    else:
+        date_from, date_to = min_date, max_date
+
+    return seller_ids, date_from, date_to, exclude_low_quality
+
+
+def apply_memory_filters(df: pd.DataFrame, exclude_low_quality: bool) -> pd.DataFrame:
+    """In-memory фильтры, применяемые после загрузки данных."""
     if exclude_low_quality:
-        mask &= ~df["seller_name"].isin(get_settings().low_quality_sellers)
-
-    return df[mask].copy()
+        df = df[~df["seller_name"].isin(get_settings().low_quality_sellers)]
+    return df.copy()
 
 
 # ---------------------------------------------------------------------------
@@ -464,10 +494,10 @@ def tab_ops(df: pd.DataFrame) -> None:
         st.plotly_chart(fig, width="stretch")
 
     st.markdown("**Воронка статусов**")
-    funnel = od.groupby("fulfillment_status", observed=True)["ya_order_id"].nunique()
-    funnel = funnel.sort_values(ascending=False).reset_index()
-    funnel.columns = ["Статус", "Заказов"]
-    fig = px.funnel(funnel, x="Заказов", y="Статус")
+    funnel_counts = od.groupby("fulfillment_status", observed=True)["ya_order_id"].nunique()
+    funnel_df = funnel_counts.sort_values(ascending=False).reset_index()
+    funnel_df.columns = ["Статус", "Заказов"]
+    fig = px.funnel(funnel_df, x="Заказов", y="Статус")
     fig.update_layout(height=400, margin={"l": 20, "r": 20, "t": 10, "b": 20})
     st.plotly_chart(fig, width="stretch")
 
@@ -631,23 +661,42 @@ def tab_distribution(df: pd.DataFrame) -> None:
 # ---------------------------------------------------------------------------
 # Точка входа
 # ---------------------------------------------------------------------------
-def main():
+def main() -> None:
     st.title("Аналитика юнит-экономики")
     st.caption(
         "Все денежные показатели в рублях. Магазины без отчёта о марже Маркета по умолчанию исключены — переключите фильтр в боковой панели, чтобы включить их в выборку."
     )
 
-    try:
-        df = load_orders()
-    except Exception as e:
-        st.error(f"Ошибка загрузки: {e}")
-        st.stop()
+    # Шаг 1: DB-фильтры (продавец, дата)
+    seller_ids, date_from, date_to, exclude_low_quality = sidebar_db_filters()
 
-    filtered = sidebar_filters(df)
+    # Шаг 2: Загрузка с фильтрацией на стороне БД
+    try:
+        df = load_orders(seller_ids=seller_ids, date_from=date_from, date_to=date_to)
+    except SQLAlchemyError as e:
+        show_load_error(
+            title="Не удалось загрузить данные из базы данных.",
+            exc=e,
+            details="Проверьте `.env`/переменные окружения и доступность PostgreSQL.",
+        )
+        st.stop()
+        return
+    except (ValueError, KeyError, TypeError) as e:
+        show_load_error(
+            title="Данные из БД имеют неожиданный формат.",
+            exc=e,
+            details="Проверьте актуальность схемы/запросов и наличие нужных колонок.",
+        )
+        st.stop()
+        return
+
+    # Шаг 3: In-memory фильтр (low-quality sellers)
+    filtered = apply_memory_filters(df, exclude_low_quality)
 
     if filtered.empty:
         st.warning("Нет данных по выбранным фильтрам.")
         st.stop()
+        return
 
     tabs = st.tabs(
         [
