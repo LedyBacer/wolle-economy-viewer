@@ -8,7 +8,13 @@ import sys
 
 
 def setup_logging(level: int = logging.INFO) -> None:
-    """Настраивает корневой логгер с форматом, пригодным для Streamlit-окружения."""
+    """Настраивает корневой логгер с форматом, пригодным для Streamlit-окружения.
+
+    Идемпотентна: повторный вызов (при hot-reload страниц Streamlit) не добавляет
+    дублирующих хендлеров.
+    """
+    if logging.getLogger().handlers:
+        return
     logging.basicConfig(
         stream=sys.stderr,
         level=level,

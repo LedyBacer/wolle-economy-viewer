@@ -1,4 +1,3 @@
-import hashlib
 import io
 
 import pandas as pd
@@ -75,11 +74,6 @@ def _to_excel(df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
-def _excel_session_key(df: pd.DataFrame) -> str:
-    h = hashlib.md5(pd.util.hash_pandas_object(df, index=True).values).hexdigest()
-    return f"excel_{h}"
-
-
 def show_table(df: pd.DataFrame) -> None:
     show_all = st.toggle("Показать все колонки", value=False)
 
@@ -89,9 +83,6 @@ def show_table(df: pd.DataFrame) -> None:
     st.dataframe(view, width="stretch", hide_index=True, column_config=_COLUMN_CONFIG)
     st.caption(f"Строк: {len(df):,}")
 
-    excel_key = _excel_session_key(view)
-    excel_ready = excel_key in st.session_state
-
     col1, col2, _ = st.columns([1, 1, 4])
     with col1:
         csv = view.to_csv(index=False).encode("utf-8-sig")
@@ -99,12 +90,7 @@ def show_table(df: pd.DataFrame) -> None:
     with col2:
         st.download_button(
             "Скачать Excel",
-            st.session_state.get(excel_key, b""),
+            _to_excel(view),
             "orders.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            disabled=not excel_ready,
         )
-
-    if not excel_ready:
-        st.session_state[excel_key] = _to_excel(view)
-        st.rerun()

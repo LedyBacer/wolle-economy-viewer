@@ -53,6 +53,6 @@ def sidebar_db_filters() -> tuple[tuple[int, ...] | None, datetime.date, datetim
 def apply_memory_filters(df: pd.DataFrame, exclude_low_quality: bool) -> pd.DataFrame:
     """In-memory фильтр, применяемый после загрузки данных из БД."""
     if exclude_low_quality:
-        df = df[~df["seller_name"].isin(get_settings().low_quality_sellers)]
-    return df.copy()
+        return df[~df["seller_name"].isin(get_settings().low_quality_sellers)]
+    return df
 

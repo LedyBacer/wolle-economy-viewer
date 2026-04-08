@@ -1,49 +1,23 @@
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from wolle_economy.domain.kpis import compute_kpis
 from wolle_economy.ui.formatters import fmt_money, fmt_pct
-from wolle_economy.ui.helpers import orders_dedup
 
 
 def tab_kpi(df: pd.DataFrame) -> None:
     st.subheader("Ключевые показатели")
 
-    od = orders_dedup(df)
-    delivered = od[~od["is_cancelled_any"]]
-
-    # Денежные агрегаты
-    revenue = od["sell_price"].sum()
-    payout = od["expected_payout"].sum()
-    commissions = od["market_services"].sum()
-    our_costs = df["our_costs"].sum()
-    profit = df["profit"].sum()
-    profit_no_pr = df["profit_no_promo"].sum()
-    promo = df["promo_discounts"].sum()
-    penalties = (
-        od.get("seller_cancel_penalty", pd.Series(dtype=float)).fillna(0).sum()
-        + od.get("late_ship_penalty", pd.Series(dtype=float)).fillna(0).sum()
-    )
-    compensations = od.get("compensations", pd.Series(dtype=float)).fillna(0).sum()
-
-    n_orders = od["ya_order_id"].nunique()
-    n_items = df["quantity"].fillna(1).sum()
-    n_delivered = delivered["ya_order_id"].nunique()
-    n_returned = od[od["is_returned"]]["ya_order_id"].nunique()
-    n_cancelled = od[od["is_cancelled_before"]]["ya_order_id"].nunique()
-    n_loss = df.groupby("ya_order_id")["profit"].sum().lt(0).sum()
-
-    aov = revenue / n_orders if n_orders else np.nan
-    aov_net = payout / n_orders if n_orders else np.nan
-    take_rate = commissions / revenue * 100 if revenue else np.nan
-    net_margin = profit / revenue * 100 if revenue else np.nan
-    contrib = (payout - our_costs) / revenue * 100 if revenue else np.nan
-    return_rate = n_returned / n_orders * 100 if n_orders else np.nan
-    cancel_rate = n_cancelled / n_orders * 100 if n_orders else np.nan
-    fulfill_rate = n_delivered / n_orders * 100 if n_orders else np.nan
-    loss_share = n_loss / n_orders * 100 if n_orders else np.nan
-    items_per_o = n_items / n_orders if n_orders else np.nan
+    m = compute_kpis(df)
+    revenue, payout, commissions, our_costs = m.revenue, m.payout, m.commissions, m.our_costs
+    profit, profit_no_pr, promo = m.profit, m.profit_no_promo, m.promo
+    penalties, compensations = m.penalties, m.compensations
+    n_orders, n_items = m.n_orders, m.n_items
+    aov, aov_net = m.aov, m.aov_net
+    net_margin, take_rate, contrib = m.net_margin, m.take_rate, m.contrib
+    return_rate, cancel_rate, fulfill_rate = m.return_rate, m.cancel_rate, m.fulfill_rate
+    loss_share, items_per_o = m.loss_share, m.items_per_o
 
     # ---- Деньги ----
     st.markdown("**Деньги**")

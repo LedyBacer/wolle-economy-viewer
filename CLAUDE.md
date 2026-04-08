@@ -17,7 +17,7 @@ src/wolle_economy/
     economics.py       # calc_economics + _compute_* (чистые функции)
     loader.py          # load_orders() — единственный источник данных для UI
   ui/
-    app.py             # точка входа Streamlit (st.set_page_config только здесь)
+    app.py             # точка входа Streamlit
     formatters.py      # fmt_money, fmt_pct
     helpers.py         # orders_dedup, show_data_quality_warning
     columns.py         # COLUMN_LABELS, DISPLAY_COLUMNS
