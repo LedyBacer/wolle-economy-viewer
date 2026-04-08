@@ -1,3 +1,4 @@
+import hashlib
 import io
 
 import pandas as pd
@@ -64,6 +65,21 @@ for _col, _label in COLUMN_LABELS.items():
         _COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_MONEY_FMT)
 
 
+@st.cache_data(show_spinner=False)
+def _to_excel(df: pd.DataFrame) -> bytes:
+    buf = io.BytesIO()
+    excel_df = df.copy()
+    for col in excel_df.select_dtypes(include=["datetimetz"]).columns:
+        excel_df[col] = excel_df[col].dt.tz_localize(None)
+    excel_df.to_excel(buf, index=False, engine="openpyxl")
+    return buf.getvalue()
+
+
+def _excel_session_key(df: pd.DataFrame) -> str:
+    h = hashlib.md5(pd.util.hash_pandas_object(df, index=True).values).hexdigest()
+    return f"excel_{h}"
+
+
 def show_table(df: pd.DataFrame) -> None:
     show_all = st.toggle("Показать все колонки", value=False)
 
@@ -73,20 +89,22 @@ def show_table(df: pd.DataFrame) -> None:
     st.dataframe(view, width="stretch", hide_index=True, column_config=_COLUMN_CONFIG)
     st.caption(f"Строк: {len(df):,}")
 
-    col1, col2 = st.columns(2)
+    excel_key = _excel_session_key(view)
+    excel_ready = excel_key in st.session_state
+
+    col1, col2, _ = st.columns([1, 1, 4])
     with col1:
         csv = view.to_csv(index=False).encode("utf-8-sig")
         st.download_button("Скачать CSV", csv, "orders.csv", "text/csv")
     with col2:
-        buf = io.BytesIO()
-        excel_view = view.copy()
-        for col in excel_view.select_dtypes(include=["datetimetz"]).columns:
-            excel_view[col] = excel_view[col].dt.tz_localize(None)
-        excel_view.to_excel(buf, index=False, engine="openpyxl")
         st.download_button(
             "Скачать Excel",
-            buf.getvalue(),
+            st.session_state.get(excel_key, b""),
             "orders.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            disabled=not excel_ready,
         )
 
+    if not excel_ready:
+        st.session_state[excel_key] = _to_excel(view)
+        st.rerun()
