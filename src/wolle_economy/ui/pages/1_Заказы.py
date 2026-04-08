@@ -1,6 +1,13 @@
 import logging
 
 import streamlit as st
+
+st.set_page_config(
+    page_title="Wolle — Заказы",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 from sqlalchemy.exc import SQLAlchemyError
 
 from wolle_economy.domain.loader import load_orders
