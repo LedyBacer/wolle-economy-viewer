@@ -25,12 +25,15 @@ MAIN_COLUMNS = [c for c in DISPLAY_COLUMNS if c not in TECHNICAL_COLUMNS]
 
 # Конфигурация колонок таблицы: вычисляется один раз при загрузке модуля
 _MONEY_FMT = "%.2f ₽"
+_PCT_FMT = "%.1f %%"
 _COLUMN_CONFIG: dict = {}
 for _col, _label in COLUMN_LABELS.items():
     if _col in {"created_at"}:
         _COLUMN_CONFIG[_label] = st.column_config.DatetimeColumn(format="DD.MM.YYYY HH:mm")
     elif _col in {"shipment_date", "last_payment_date"}:
         _COLUMN_CONFIG[_label] = st.column_config.DatetimeColumn(format="DD.MM.YYYY")
+    elif _col in {"margin_plan_pct", "margin_fact_pct"}:
+        _COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_PCT_FMT)
     elif _col in {
         "base_price_total",
         "ff_fee_total",
@@ -56,6 +59,7 @@ for _col, _label in COLUMN_LABELS.items():
         "payout_if_paid",
         "expected_payout",
         "actual_profit",
+        "margin_fact_rub",
     }:
         _COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_MONEY_FMT)
 

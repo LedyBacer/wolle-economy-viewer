@@ -162,6 +162,9 @@ def _compute_flags_and_lags(df: pd.DataFrame) -> pd.DataFrame:
     sp = df["sell_price"].replace(0, np.nan)
     df["take_rate_pct"] = (df["market_services"] / sp * 100).round(2)
     df["margin_pct"] = (df["profit"] / sp * 100).round(2)
+    df["margin_plan_pct"] = (df["our_margin"] / sp * 100).round(2)
+    df["margin_fact_pct"] = df["margin_pct"]
+    df["margin_fact_rub"] = df["profit"]
 
     df["is_cancelled_before"] = df["fulfillment_status"].isin(CANCELLED_BEFORE_SHIP)
     df["is_returned"] = df["fulfillment_status"].isin(RETURNED_STATUSES)
