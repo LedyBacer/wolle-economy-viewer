@@ -166,6 +166,13 @@ def _compute_flags_and_lags(df: pd.DataFrame) -> pd.DataFrame:
     df["margin_fact_pct"] = df["margin_pct"]
     df["margin_fact_rub"] = df["profit"]
 
+    # Маржа относительно закупочной цены (для сравнения с margin_percent из БД).
+    # План: our_margin / base_price_total → совпадает с margin_percent.
+    # Факт: profit / base_price_total → «сколько реально заработали сверх закупки».
+    bp = df["base_price_total"].replace(0, np.nan)
+    df["margin_plan_on_cost_pct"] = (df["our_margin"] / bp * 100).round(2)
+    df["margin_fact_on_cost_pct"] = (df["profit"] / bp * 100).round(2)
+
     df["is_cancelled_before"] = df["fulfillment_status"].isin(CANCELLED_BEFORE_SHIP)
     df["is_returned"] = df["fulfillment_status"].isin(RETURNED_STATUSES)
     df["is_cancelled_any"] = df["fulfillment_status"].isin(CANCELLED_STATUSES)

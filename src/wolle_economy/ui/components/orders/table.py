@@ -33,7 +33,7 @@ for _col, _label in COLUMN_LABELS.items():
         _COLUMN_CONFIG[_label] = st.column_config.DatetimeColumn(format="DD.MM.YYYY HH:mm")
     elif _col in {"shipment_date", "last_payment_date"}:
         _COLUMN_CONFIG[_label] = st.column_config.DatetimeColumn(format="DD.MM.YYYY")
-    elif _col in {"margin_plan_pct", "margin_fact_pct"}:
+    elif _col in {"margin_plan_pct", "margin_fact_pct", "margin_plan_on_cost_pct", "margin_fact_on_cost_pct"}:
         _COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_PCT_FMT)
     elif _col in {
         "base_price_total",
