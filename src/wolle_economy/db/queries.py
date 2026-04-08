@@ -156,7 +156,16 @@ def build_order_items_query(
 _PAYMENT_AGGREGATES_SELECT = """
 SELECT
     ya_orders_id,
-    MAX(payment_date) AS last_payment_date,
+    MAX(CASE
+        -- Новый формат: реальная выплата по графику или удержана из платежей покупателей
+        WHEN transaction_source IS NOT NULL
+         AND payment_status IN ('Удержан из платежей покупателей', 'Переведён по графику выплат')
+        THEN payment_date
+        -- Старый формат: только Начисление = фактический перевод средств
+        WHEN transaction_source IS NULL AND payment_status = 'Начисление'
+        THEN payment_date
+        ELSE NULL
+    END) AS last_payment_date,
 
     -- Фактические комиссии ЯМ (реальные удержания за услуги).
     -- Новый формат (transaction_source заполнен): фильтруем по источнику 'Оплата услуг'.
