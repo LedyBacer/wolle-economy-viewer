@@ -44,6 +44,22 @@ def _compute_base_totals(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
     df["socket_adapter_total"] = df["socket_adapter_fee"] * q
     df["min_sell_price_total"] = df["min_sell_price"] * q
 
+    # Фактическая закупочная цена из order_to_supplier (см. queries.py).
+    # Если значения нет или оно равно 0 — используем плановый base_price.
+    # base_price_total остаётся плановым (на нём держится our_margin /
+    # price_with_margin), а в our_costs идёт effective_purchase_total.
+    if "supplier_price_fact" in df.columns:
+        spf = pd.to_numeric(df["supplier_price_fact"], errors="coerce").fillna(0)
+    else:
+        spf = pd.Series(0.0, index=df.index)
+    df["supplier_price_fact"] = spf
+    df["effective_purchase_total"] = np.where(
+        spf > 0,
+        spf * q,
+        df["base_price_total"],
+    )
+    df["uses_fact_purchase_price"] = spf > 0
+
     margin = df["margin_percent"].fillna(0).astype(float)
     df["our_margin"] = df["base_price_total"] * margin / 100
     df["price_with_margin"] = df["base_price_total"] * (1 + margin / 100)
@@ -173,7 +189,7 @@ def calc_economics(df: pd.DataFrame) -> pd.DataFrame:
     df = _compute_base_totals(df, q)
     df = _compute_payouts(df, q)
 
-    our_costs = df["base_price_total"] + df["ff_fee_total"] + df["socket_adapter_total"]
+    our_costs = df["effective_purchase_total"] + df["ff_fee_total"] + df["socket_adapter_total"]
     df["our_costs"] = our_costs
 
     df = _compute_profits(df, our_costs)

@@ -79,6 +79,64 @@ class TestComputeBaseTotals:
         assert result["our_margin"].iloc[0] == 0.0
         assert result["price_with_margin"].iloc[0] == pytest.approx(1000.0)
 
+    def test_supplier_price_fact_used_when_positive(self, fact_purchase_order):
+        """Если supplier_price_fact > 0 → effective_purchase_total = spf * q."""
+        df = fact_purchase_order.copy()
+        q = df["quantity"].fillna(1)
+        result = _compute_base_totals(df, q)
+
+        # base_price=1000 (плановая) — base_price_total остаётся плановым
+        assert result["base_price_total"].iloc[0] == 1000.0
+        # supplier_price_fact=800, q=1
+        assert result["effective_purchase_total"].iloc[0] == 800.0
+        assert result["uses_fact_purchase_price"].iloc[0] == True  # noqa: E712
+
+    def test_supplier_price_fact_zero_falls_back_to_base(self, fact_purchase_zero_order):
+        """supplier_price_fact = 0 → fallback на base_price_total."""
+        df = fact_purchase_zero_order.copy()
+        q = df["quantity"].fillna(1)
+        result = _compute_base_totals(df, q)
+
+        assert result["effective_purchase_total"].iloc[0] == 1000.0
+        assert result["uses_fact_purchase_price"].iloc[0] == False  # noqa: E712
+
+    def test_supplier_price_fact_nan_falls_back_to_base(self, delivered_order):
+        """NaN supplier_price_fact (как из БД при отсутствии связи) → fallback."""
+        df = delivered_order.copy()
+        q = df["quantity"].fillna(1)
+        result = _compute_base_totals(df, q)
+
+        assert result["effective_purchase_total"].iloc[0] == 1000.0
+        assert result["uses_fact_purchase_price"].iloc[0] == False  # noqa: E712
+
+    def test_supplier_price_fact_missing_column(self, delivered_order):
+        """Если колонки supplier_price_fact нет вовсе — тоже fallback."""
+        df = delivered_order.copy().drop(columns=["supplier_price_fact"])
+        q = df["quantity"].fillna(1)
+        result = _compute_base_totals(df, q)
+
+        assert result["effective_purchase_total"].iloc[0] == 1000.0
+        assert (result["uses_fact_purchase_price"] == False).all()  # noqa: E712
+
+    def test_supplier_price_fact_with_quantity(self):
+        """effective_purchase_total = spf * quantity."""
+        df = make_orders(supplier_price_fact=700.0, quantity=3)
+        q = df["quantity"].fillna(1)
+        result = _compute_base_totals(df, q)
+
+        assert result["effective_purchase_total"].iloc[0] == 2100.0
+
+    def test_our_margin_uses_planned_base_price(self, fact_purchase_order):
+        """our_margin / price_with_margin не должны зависеть от фактической цены —
+        это плановая наценка Wolle, считается от плановой base_price."""
+        df = fact_purchase_order.copy()
+        q = df["quantity"].fillna(1)
+        result = _compute_base_totals(df, q)
+
+        # margin_percent=10, base_price_total=1000 (плановая)
+        assert result["our_margin"].iloc[0] == pytest.approx(100.0)
+        assert result["price_with_margin"].iloc[0] == pytest.approx(1100.0)
+
     def test_socket_adapter_multiplied(self):
         df = make_orders(socket_adapter_fee=50.0, quantity=3)
         q = df["quantity"].fillna(1)
@@ -529,6 +587,30 @@ class TestCalcEconomicsIntegration:
         assert result["is_cancelled_any"].iloc[0] == True  # noqa: E712
         # Возврат оплачен (WITHHELD) → actual_profit = expected_payout - our_costs
         assert result["actual_profit"].iloc[0] == pytest.approx(120.0)
+
+    def test_full_pipeline_with_fact_purchase_price(self, fact_purchase_order):
+        """
+        Проверка каскада фактической закупочной цены через всю пайплайн.
+        spf=800 (vs base_price=1000) → our_costs снижается на 200 → profit растёт на 200.
+        """
+        result = calc_economics(fact_purchase_order)
+
+        # our_costs = effective_purchase_total + ff_fee_total + socket_adapter_total
+        #           = 800 + 100 + 0 = 900 (вместо 1100 на плановой цене)
+        assert result["our_costs"].iloc[0] == pytest.approx(900.0)
+        # expected_payout=1220, our_costs=900 → profit=320
+        assert result["expected_profit"].iloc[0] == pytest.approx(320.0)
+        assert result["profit"].iloc[0] == pytest.approx(320.0)
+        assert result["actual_profit"].iloc[0] == pytest.approx(320.0)
+        assert result["uses_fact_purchase_price"].iloc[0] == True  # noqa: E712
+
+    def test_full_pipeline_fact_zero_uses_planned(self, fact_purchase_zero_order):
+        """spf=0 → пайплайн считает по плановой цене (как раньше)."""
+        result = calc_economics(fact_purchase_zero_order)
+
+        assert result["our_costs"].iloc[0] == pytest.approx(1100.0)
+        assert result["profit"].iloc[0] == pytest.approx(120.0)
+        assert result["uses_fact_purchase_price"].iloc[0] == False  # noqa: E712
 
     def test_full_pipeline_no_nan_in_key_columns(self, delivered_order):
         """Ключевые финансовые колонки не должны содержать NaN."""

@@ -20,6 +20,7 @@ from wolle_economy.db.queries import (
     SELLERS_SQL,
     build_order_items_query,
     build_payment_aggregates_query,
+    build_supplier_price_fact_query,
 )
 from wolle_economy.domain.economics import calc_economics, merge_with_payments
 
@@ -81,15 +82,27 @@ def load_orders(
     engine = get_engine()
     orders_sql, orders_params = build_order_items_query(seller_ids, date_from, date_to)
     payments_sql, payments_params = build_payment_aggregates_query(seller_ids, date_from, date_to)
+    supplier_sql, supplier_params = build_supplier_price_fact_query(
+        seller_ids, date_from, date_to
+    )
 
     try:
         with engine.connect() as conn:
             orders = pd.read_sql_query(orders_sql, conn, params=orders_params)
             payments = pd.read_sql_query(payments_sql, conn, params=payments_params)
+            supplier_prices = pd.read_sql_query(supplier_sql, conn, params=supplier_params)
     except SQLAlchemyError:
         logger.exception("Ошибка SQLAlchemy при загрузке данных из БД")
         raise
 
-    logger.info("Загружено строк заказов: %d, платежей: %d", len(orders), len(payments))
+    logger.info(
+        "Загружено строк заказов: %d, платежей: %d, фактических закупочных цен: %d",
+        len(orders),
+        len(payments),
+        len(supplier_prices),
+    )
+    # Фактическая закупочная цена per item; в economics.py делается fallback
+    # на плановый base_price, если значение отсутствует или равно 0.
+    orders = orders.merge(supplier_prices, on="item_id", how="left")
     df = merge_with_payments(orders, payments)
     return calc_economics(df)

@@ -260,6 +260,90 @@ def build_payment_aggregates_query(
 
 
 # ---------------------------------------------------------------------------
+# Фактическая закупочная цена позиции заказа
+# ---------------------------------------------------------------------------
+# Логика: для каждого ya_order_item определяем «исходный» order_to_supplier,
+# из которого реально приехал товар на склад, и берём его ru_custom_price/ru_price.
+#
+# - Если по позиции вообще нет движений по складу → берём текущий order_to_supplier.
+# - Если последнее движение — 'lost' → берём текущий order_to_supplier.
+# - Иначе → берём первую транзакцию, которая привезла товар на этот склад.
+#
+# COALESCE(..., 0) возвращает 0, когда исходного заказа поставщику нет —
+# в этом случае Python-слой делает fallback на плановый base_price.
+_SUPPLIER_PRICE_FACT_SELECT = """
+WITH
+latest_stock_movement AS (
+    SELECT DISTINCT ON (smt.all_split_orders_id)
+        smt.all_split_orders_id,
+        smt.type,
+        smt.warehouse_new_id
+    FROM e_com.stock_movement_transactions smt
+    ORDER BY smt.all_split_orders_id, smt.created_at DESC
+),
+first_stock_transaction AS (
+    SELECT DISTINCT ON (smt.warehouse_new_id)
+        smt.warehouse_new_id,
+        smt.all_split_orders_id AS first_source_order_id
+    FROM e_com.stock_movement_transactions smt
+    ORDER BY smt.warehouse_new_id, smt.created_at ASC
+),
+source_order_mapping AS (
+    SELECT
+        yai.id AS ya_order_item_id,
+        CASE
+            WHEN lsm.all_split_orders_id IS NULL THEN aso.id
+            WHEN lsm.type = 'lost'               THEN aso.id
+            ELSE fst.first_source_order_id
+        END AS source_all_split_orders_id
+    FROM e_com.ya_order_items yai
+    INNER JOIN e_com.all_split_orders aso ON yai.id = aso.ya_order_items_id
+    LEFT JOIN latest_stock_movement lsm ON aso.id = lsm.all_split_orders_id
+    LEFT JOIN first_stock_transaction fst ON lsm.warehouse_new_id = fst.warehouse_new_id
+)
+SELECT
+    yai.id AS item_id,
+    COALESCE(ots.ru_custom_price, ots.ru_price, 0) AS supplier_price_fact
+FROM e_com.ya_order_items yai
+JOIN e_com.ya_orders o ON yai.order_id = o.id
+LEFT JOIN source_order_mapping som ON yai.id = som.ya_order_item_id
+LEFT JOIN e_com.all_split_orders aso_source ON som.source_all_split_orders_id = aso_source.id
+LEFT JOIN e_com.order_to_supplier ots ON aso_source.order_to_supplier_id = ots.id
+"""
+
+
+def build_supplier_price_fact_query(
+    seller_ids: tuple[int, ...] | None = None,
+    date_from: datetime.date | None = None,
+    date_to: datetime.date | None = None,
+) -> tuple[TextClause, dict[str, Any]]:
+    """
+    Возвращает (sql, params) для запроса фактических закупочных цен по позициям.
+
+    Фильтры применяются по `ya_orders` тем же набором условий, что и в
+    основном запросе позиций — это сужает результат до релевантных заказов.
+    """
+    conditions: list[str] = []
+    params: dict[str, Any] = {}
+
+    if seller_ids:
+        conditions.append("o.seller_id = ANY(:seller_ids)")
+        params["seller_ids"] = list(seller_ids)
+
+    if date_from is not None:
+        conditions.append("o.created_at >= :date_from")
+        params["date_from"] = date_from
+
+    if date_to is not None:
+        conditions.append("o.created_at < :date_to_exclusive")
+        params["date_to_exclusive"] = date_to + datetime.timedelta(days=1)
+
+    where = ("\nWHERE " + "\n  AND ".join(conditions)) if conditions else ""
+    sql = text(_SUPPLIER_PRICE_FACT_SELECT + where)
+    return sql, params
+
+
+# ---------------------------------------------------------------------------
 # Запрос 3: Список продавцов
 # ---------------------------------------------------------------------------
 SELLERS_SQL = text("""

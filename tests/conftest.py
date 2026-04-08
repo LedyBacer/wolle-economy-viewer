@@ -25,6 +25,9 @@ _BASE_ROW: dict = {
     "supplier_name": "ООО Тест",
     # Цены из ya_order_items
     "base_price": 1000.0,
+    # Фактическая закупочная цена (из order_to_supplier).
+    # None → fallback на base_price в _compute_base_totals.
+    "supplier_price_fact": None,
     "ff_fee": 100.0,
     "socket_adapter_fee": 0.0,
     "min_sell_price": 900.0,
@@ -152,6 +155,18 @@ def high_market_services_order() -> pd.DataFrame:
 def nan_sell_price_order() -> pd.DataFrame:
     """Заказ без данных из margin_report — sell_price рассчитывается как fallback."""
     return make_orders(sell_price=None, market_services=None)
+
+
+@pytest.fixture
+def fact_purchase_order() -> pd.DataFrame:
+    """Заказ с фактической закупочной ценой ниже плановой (800 vs 1000)."""
+    return make_orders(supplier_price_fact=800.0)
+
+
+@pytest.fixture
+def fact_purchase_zero_order() -> pd.DataFrame:
+    """Фактическая закупочная цена = 0 → fallback на base_price."""
+    return make_orders(supplier_price_fact=0.0)
 
 
 @pytest.fixture
