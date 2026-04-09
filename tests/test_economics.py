@@ -16,7 +16,7 @@ import math
 
 import pandas as pd
 import pytest
-from conftest import make_orders
+from conftest import make_orders, make_partial_return_order
 
 from wolle_economy.domain.economics import (
     _compute_actual_profit,
@@ -689,3 +689,178 @@ class TestMergeWithPayments:
 
         assert "ya_order_id" in result.columns
         assert "ya_orders_id" not in result.columns
+
+
+# ===========================================================================
+# Частичный возврат (o2m: несколько транзакций на одну позицию)
+# ===========================================================================
+
+
+class TestPartialReturn:
+    """
+    Тесты для заказов, где одна позиция имеет несколько транзакций в
+    ya_order_transactions_report: часть штук доставлена, часть возвращена.
+
+    SQL-слой агрегирует транзакции в подзапросе tr:
+      - статус → 'Частично возвращён'
+      - bonuses → SUM (возврат всегда даёт 0)
+      - customer_refund → SUM (только у возвратных строк)
+      - returned_sell_price → SUM sell_price возвратных строк
+      - tr_delivered_quantity → COUNT не-возвратных строк
+
+    economics.py корректирует:
+      - sell_price -= returned_sell_price  (вычитаем buyer_price+subsidy возврата)
+      - our_costs считается через tr_delivered_quantity, не quantity
+    """
+
+    # --- sell_price ---
+
+    def test_sell_price_corrected_by_returned_sell_price(self, partial_return_order):
+        """sell_price = mr_sell_price - returned_sell_price."""
+        df = partial_return_order.copy()
+        q = df["quantity"].fillna(1)
+        result = _compute_payouts(df, q)
+
+        # 3000 - 1500 = 1500
+        assert result["sell_price"].iloc[0] == pytest.approx(1500.0)
+
+    def test_sell_price_unchanged_when_no_returned_sell_price_column(self, delivered_order):
+        """Для обычного заказа (без колонки returned_sell_price) sell_price не меняется."""
+        df = delivered_order.copy()
+        assert "returned_sell_price" not in df.columns
+        q = df["quantity"].fillna(1)
+        result = _compute_payouts(df, q)
+
+        assert result["sell_price"].iloc[0] == pytest.approx(1500.0)
+
+    def test_sell_price_unchanged_when_returned_sell_price_zero(self, delivered_order):
+        """returned_sell_price=0 (обычная доставка) — sell_price не меняется."""
+        df = delivered_order.copy()
+        df["returned_sell_price"] = 0.0
+        q = df["quantity"].fillna(1)
+        result = _compute_payouts(df, q)
+
+        assert result["sell_price"].iloc[0] == pytest.approx(1500.0)
+
+    def test_subsidy_of_returned_unit_excluded(self):
+        """
+        returned_sell_price = buyer_price + subsidy возвращённой штуки.
+        Субсидия правильно вычитается (через returned_sell_price),
+        а не через customer_refund (который содержит только buyer_price).
+        """
+        # quantity=2, каждая штука: buyer_price=1000, subsidy=200
+        # margin_report: sell_price=2400 (за обе)
+        # возвращена 1 штука: returned_sell_price=1200, customer_refund=-1000
+        df = make_partial_return_order(
+            sell_price=2400.0,
+            buyer_price=1000.0,
+            subsidy=200.0,
+            returned_sell_price=1200.0,  # buyer_price + subsidy возврата
+            customer_refund=-1000.0,     # только buyer_price (без субсидии)
+        )
+        q = df["quantity"].fillna(1)
+        result = _compute_payouts(df, q)
+
+        # Правильно: 2400 - 1200 = 1200 (вычли buyer_price+subsidy)
+        # Неправильно было бы: 2400 + (-1000) = 1400 (без субсидии возврата)
+        assert result["sell_price"].iloc[0] == pytest.approx(1200.0)
+
+    # --- bonuses (tr_bonuses) ---
+
+    def test_bonuses_summed_delivery_only(self, partial_return_order):
+        """
+        bonuses = SUM по обеим транзакциям.
+        Возвратная транзакция всегда имеет bonuses=0,
+        поэтому итог = bonuses только из строки доставки.
+        """
+        df = partial_return_order.copy()
+        q = df["quantity"].fillna(1)
+        result = _compute_payouts(df, q)
+
+        assert result["bonus_points"].iloc[0] == pytest.approx(200.0)
+
+    def test_bonuses_not_doubled(self):
+        """Если у возвратной строки bonuses=0 — сумма не удваивается."""
+        df = make_partial_return_order(tr_bonuses=300.0)
+        q = df["quantity"].fillna(1)
+        result = _compute_payouts(df, q)
+
+        assert result["bonus_points"].iloc[0] == pytest.approx(300.0)
+
+    # --- expected_payout ---
+
+    def test_expected_payout_after_partial_return(self, partial_return_order):
+        """expected_payout = скорректированный sell_price - market_services."""
+        df = partial_return_order.copy()
+        q = df["quantity"].fillna(1)
+        result = _compute_payouts(df, q)
+
+        # sell_price после корректировки = 1500, market_services = 300
+        assert result["expected_payout"].iloc[0] == pytest.approx(1200.0)
+
+    # --- our_costs через delivered_quantity ---
+
+    def test_our_costs_use_delivered_quantity(self, partial_return_order):
+        """
+        our_costs считается только на доставленные штуки (tr_delivered_quantity=1),
+        а не на все заказанные (quantity=2): возвращённый товар вернулся на склад.
+        """
+        result = calc_economics(partial_return_order)
+
+        # base_price=1000, ff_fee=100, q_delivered=1 → 1100
+        # Если бы считали по quantity=2 — было бы 2200
+        assert result["our_costs"].iloc[0] == pytest.approx(1100.0)
+
+    def test_our_costs_with_fact_purchase_price(self):
+        """supplier_price_fact тоже умножается на delivered_quantity."""
+        df = make_partial_return_order(supplier_price_fact=800.0)
+        result = calc_economics(df)
+
+        # 800 * 1 + 100 * 1 = 900
+        assert result["our_costs"].iloc[0] == pytest.approx(900.0)
+
+    def test_our_costs_full_quantity_when_no_tr_delivered_quantity(self):
+        """Если tr_delivered_quantity отсутствует — fallback на полный quantity."""
+        df = make_partial_return_order()
+        df = df.drop(columns=["tr_delivered_quantity"])
+        result = calc_economics(df)
+
+        # quantity=2: base_price=1000*2 + ff_fee=100*2 = 2200
+        assert result["our_costs"].iloc[0] == pytest.approx(2200.0)
+
+    # --- profit ---
+
+    def test_profit_partial_return(self, partial_return_order):
+        """
+        Сквозной тест: sell_price скорректирован, our_costs за 1 шт.
+        profit = expected_payout - our_costs = 1200 - 1100 = 100.
+        """
+        result = calc_economics(partial_return_order)
+
+        assert result["profit"].iloc[0] == pytest.approx(100.0)
+
+    # --- статус и флаги ---
+
+    def test_fulfillment_status_partially_returned(self, partial_return_order):
+        """fulfillment_status = 'Частично возвращён'."""
+        result = calc_economics(partial_return_order)
+
+        assert result["fulfillment_status"].iloc[0] == "Частично возвращён"
+
+    def test_is_returned_true_for_partial_return(self, partial_return_order):
+        """is_returned=True: 'Частично возвращён' входит в RETURNED_STATUSES."""
+        result = calc_economics(partial_return_order)
+
+        assert result["is_returned"].iloc[0] == True  # noqa: E712
+
+    def test_is_delivered_false_for_partial_return(self, partial_return_order):
+        """is_delivered=False: частичный возврат — не чистая доставка."""
+        result = calc_economics(partial_return_order)
+
+        assert result["is_delivered"].iloc[0] == False  # noqa: E712
+
+    def test_is_cancelled_before_false_for_partial_return(self, partial_return_order):
+        """is_cancelled_before=False: расходы понесены, товар отгружен."""
+        result = calc_economics(partial_return_order)
+
+        assert result["is_cancelled_before"].iloc[0] == False  # noqa: E712

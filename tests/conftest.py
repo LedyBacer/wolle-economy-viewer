@@ -6,7 +6,7 @@
 import pandas as pd
 import pytest
 
-from wolle_economy.enums import FulfillmentStatus, PaymentStatus
+from wolle_economy.enums import FulfillmentStatus, PaymentStatus, RETURNED_STATUSES
 
 # ---------------------------------------------------------------------------
 # Базовый шаблон строки заказа
@@ -173,3 +173,47 @@ def fact_purchase_zero_order() -> pd.DataFrame:
 def quantity_2_order() -> pd.DataFrame:
     """Заказ с количеством = 2 (base_price_total должен удвоиться)."""
     return make_orders(quantity=2)
+
+
+def make_partial_return_order(**overrides) -> pd.DataFrame:
+    """
+    Создаёт DataFrame с частичным возвратом: quantity=2, доставлена 1 шт, возвращена 1 шт.
+
+    Значения отражают результат агрегирующего подзапроса tr в ORDER_ITEMS_SQL:
+    - tr_bonuses            = сумма bonuses всех транзакций (возврат даёт 0)
+    - customer_refund       = сумма customer_refund_amount (только у возвратной строки)
+    - returned_sell_price   = sell_price возвратной транзакции (buyer_price + subsidy за 1 шт)
+    - tr_delivered_quantity = количество не-возвратных транзакций = 1
+    - sell_price            = из margin_report за обе штуки (до корректировки в economics.py)
+
+    Числа:
+        sell_price (total)  = 3000  (1500 за шт × 2)
+        market_services     = 300
+        returned_sell_price = 1500  (за возвращённую штуку)
+        → sell_price после корректировки = 1500
+        → expected_payout  = 1500 - 300 = 1200
+        → our_costs        = (base_price=1000 + ff_fee=100) × delivered_qty=1 = 1100
+        → profit           = 1200 - 1100 = 100
+    """
+    row = {
+        **_BASE_ROW,
+        "quantity": 2,
+        "sell_price": 3000.0,       # за обе штуки из margin_report
+        "market_services": 300.0,
+        "fulfillment_status": FulfillmentStatus.PARTIALLY_RETURNED,
+        "payment_status": PaymentStatus.TRANSFERRED,
+        "tr_bonuses": 200.0,        # только из строки доставки (возврат даёт 0)
+        "customer_refund": -1500.0, # только buyer_price возвращённой штуки
+        "returned_sell_price": 1500.0,  # buyer_price + subsidy возвращённой штуки
+        "tr_delivered_quantity": 1,
+        "tr_customer_payment_date": "2024-01-15T10:00:00+00:00",
+        "refund_payment_date": "2024-01-17T10:00:00+00:00",
+        **overrides,
+    }
+    return pd.DataFrame([row])
+
+
+@pytest.fixture
+def partial_return_order() -> pd.DataFrame:
+    """Заказ с частичным возвратом: quantity=2, доставлена 1 шт, возвращена 1 шт."""
+    return make_partial_return_order()

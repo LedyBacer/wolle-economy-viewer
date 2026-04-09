@@ -47,6 +47,9 @@ SELECT
     -- подставляем русскую расшифровку o.status, чтобы колонки не были пустыми.
     COALESCE(tr.status, o.status) AS order_status,
     COALESCE(
+        -- tr.status='Частично возвращён' перебивает mr.status:
+        -- margin_report может показывать 'Доставлен' даже при частичном возврате
+        CASE WHEN tr.status = 'Частично возвращён' THEN 'Частично возвращён' END,
         mr.status,
         CASE o.status
             WHEN 'DELIVERED'  THEN 'Доставлен'
@@ -80,6 +83,9 @@ SELECT
     COALESCE(tr.market_discount_sber, 0)   AS sber_discount,
     COALESCE(tr.market_discount_ya_plus, 0) AS ya_plus_discount,
     COALESCE(tr.customer_refund_amount, 0) AS customer_refund,
+    COALESCE(tr.returned_sell_price, 0)    AS returned_sell_price,
+    -- NULL когда нет транзакций (нет tr-записи) → economics.py делает fallback на quantity
+    tr.delivered_quantity                  AS tr_delivered_quantity,
 
     -- Даты платежей из транзакционного отчёта (надёжнее payments_reports.payment_date)
     tr.customer_payment_date      AS tr_customer_payment_date,
@@ -102,8 +108,49 @@ JOIN e_com.unique_product_groups upg
     ON fi.unique_product_group_id = upg.id
 LEFT JOIN e_com.ya_order_margin_report mr
     ON o.id = mr.ya_orders_id
-LEFT JOIN e_com.ya_order_transactions_report tr
-    ON i.id = tr.ya_order_items_id
+-- Агрегируем транзакции по позиции: одна ya_order_items может иметь несколько строк,
+-- например если из 3 заказанных штук 1 вернули — будет транзакция доставки и транзакция возврата.
+-- SUM по финансовым полям, MAX по датам и статусу.
+LEFT JOIN (
+    SELECT
+        ya_order_items_id,
+        -- Итоговый статус:
+        -- - есть и доставка и возврат → "Частично возвращён"
+        -- - только возвраты → берём статус возврата
+        -- - только доставка → берём статус доставки
+        CASE
+            WHEN COUNT(CASE WHEN status IN ('Возврат оформлен', 'Невыкуп передан вам') THEN 1 END) > 0
+             AND COUNT(CASE WHEN status NOT IN ('Возврат оформлен', 'Невыкуп передан вам') THEN 1 END) > 0
+            THEN 'Частично возвращён'
+            ELSE COALESCE(
+                MAX(CASE WHEN status IN ('Возврат оформлен', 'Невыкуп передан вам') THEN status END),
+                MAX(status)
+            )
+        END                                        AS status,
+        SUM(COALESCE(bonuses, 0))                  AS bonuses,
+        SUM(COALESCE(our_discount, 0))             AS our_discount,
+        SUM(COALESCE(market_discount, 0))          AS market_discount,
+        SUM(COALESCE(other_market_discounts, 0))   AS other_market_discounts,
+        SUM(COALESCE(market_discount_sber, 0))     AS market_discount_sber,
+        SUM(COALESCE(market_discount_ya_plus, 0))  AS market_discount_ya_plus,
+        SUM(COALESCE(customer_refund_amount, 0))   AS customer_refund_amount,
+        -- Сумма sell_price возвращённых транзакций = buyer_price + subsidy за возвращённые штуки.
+        -- Используется для корректировки sell_price: customer_refund_amount не включает субсидию,
+        -- поэтому вычитать нужно именно sell_price возврата, а не customer_refund_amount.
+        SUM(CASE
+            WHEN status IN ('Возврат оформлен', 'Невыкуп передан вам')
+            THEN COALESCE(sell_price, 0) ELSE 0
+        END)                                       AS returned_sell_price,
+        -- Количество доставленных единиц (total - возвращённые).
+        -- Каждая транзакция = 1 штука заказа; используется для корректировки our_costs.
+        COUNT(CASE
+            WHEN status NOT IN ('Возврат оформлен', 'Невыкуп передан вам') THEN 1
+        END)                                       AS delivered_quantity,
+        MAX(customer_payment_date)                 AS customer_payment_date,
+        MAX(refund_payment_date)                   AS refund_payment_date
+    FROM e_com.ya_order_transactions_report
+    GROUP BY ya_order_items_id
+) tr ON i.id = tr.ya_order_items_id
 LEFT JOIN e_com.market_modifier_yandex mm
     ON fi.market_modifier_yandex_id = mm.id
 LEFT JOIN e_com.ff_fees ff
@@ -310,7 +357,9 @@ source_order_mapping AS (
     LEFT JOIN latest_stock_movement lsm ON aso.id = lsm.all_split_orders_id
     LEFT JOIN first_stock_transaction fst ON lsm.warehouse_new_id = fst.warehouse_new_id
 )
-SELECT
+-- DISTINCT ON: у позиции может быть несколько all_split_orders (quantity>1),
+-- что порождает несколько строк в source_order_mapping. Берём одну — цена одинакова.
+SELECT DISTINCT ON (yai.id)
     yai.id AS item_id,
     COALESCE(ots.ru_custom_price, ots.ru_price, 0) AS supplier_price_fact
 FROM e_com.ya_order_items yai

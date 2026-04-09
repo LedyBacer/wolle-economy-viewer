@@ -74,6 +74,14 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
         (df["buyer_price"] + df["subsidy"]) * q,
     )
 
+    # При частичном возврате margin_report хранит sell_price за все штуки.
+    # Корректируем: вычитаем sell_price возвращённых транзакций (= buyer_price + subsidy за возврат).
+    # Нельзя использовать customer_refund_amount — он содержит только buyer_price без субсидии,
+    # а субсидия возврата списывается отдельно через "Возврат баллов за скидку Маркета".
+    # Для обычных заказов returned_sell_price = 0, поэтому изменений нет.
+    returned_sell = df["returned_sell_price"].fillna(0) if "returned_sell_price" in df.columns else 0.0
+    df["sell_price"] = df["sell_price"] - returned_sell
+
     # Ожидаемая выплата = цена продажи минус комиссии ЯМ
     df["expected_payout"] = (df["sell_price"].fillna(0) - df["market_services"].fillna(0)).clip(
         lower=0
@@ -196,10 +204,28 @@ def calc_economics(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     q = df["quantity"].fillna(1)
 
+    # При частичном возврате затраты считаем только на доставленные единицы:
+    # покупная цена возвращённых штук не потеряна — товар вернулся на склад.
+    # Если транзакций нет (tr_delivered_quantity IS NULL) — fallback на полный quantity.
+    if "tr_delivered_quantity" in df.columns:
+        delivered_q = pd.to_numeric(df["tr_delivered_quantity"], errors="coerce").fillna(q)
+    else:
+        delivered_q = q
+
     df = _compute_base_totals(df, q)
     df = _compute_payouts(df, q)
 
-    our_costs = df["effective_purchase_total"] + df["ff_fee_total"] + df["socket_adapter_total"]
+    spf = df["supplier_price_fact"]
+    effective_purchase_delivered = np.where(
+        spf > 0,
+        spf * delivered_q,
+        df["base_price"] * delivered_q,
+    )
+    our_costs = (
+        effective_purchase_delivered
+        + df["ff_fee"] * delivered_q
+        + df["socket_adapter_fee"] * delivered_q
+    )
     df["our_costs"] = our_costs
 
     df = _compute_profits(df, our_costs)
