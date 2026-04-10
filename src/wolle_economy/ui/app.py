@@ -28,7 +28,7 @@ st.set_page_config(
 
 def main() -> None:
     st.title("Wolle — юнит-экономика Яндекс Маркет")
-    st.caption("Сводный обзор по магазинам с полной отчётностью маржи Маркета.")
+    st.caption("Сводный обзор. WolleBuy исключён — для него нет отчёта о марже Маркета.")
 
     df = safe_load_orders()
 

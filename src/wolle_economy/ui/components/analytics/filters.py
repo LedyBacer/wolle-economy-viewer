@@ -33,7 +33,7 @@ def sidebar_db_filters() -> tuple[tuple[int, ...] | None, datetime.date, datetim
         exclude_low_quality = st.checkbox(
             "Исключить магазины без margin_report",
             value=True,
-            help="WolleBuy и ТехноПравда Гонконг — для них нет точных данных о выручке/комиссиях",
+            help="WolleBuy — для него нет точных данных о выручке/комиссиях",
         )
 
     if set(sel_names) == set(all_names):

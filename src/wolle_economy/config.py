@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     # Магазины без полного отчёта о марже ЯМ.
     # Данные для них носят справочный характер и исключаются из обзорных KPI.
-    low_quality_sellers: frozenset[str] = frozenset({"WolleBuy", "ТехноПравда Гонконг"})
+    low_quality_sellers: frozenset[str] = frozenset({"WolleBuy"})
 
 
 @lru_cache(maxsize=1)
