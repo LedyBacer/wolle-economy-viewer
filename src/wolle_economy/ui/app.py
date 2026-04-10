@@ -8,7 +8,6 @@ import logging
 
 import streamlit as st
 
-from wolle_economy.config import get_settings
 from wolle_economy.logging_setup import setup_logging
 from wolle_economy.ui.components.home.kpis import render_kpis
 from wolle_economy.ui.components.home.navigation import render_navigation
@@ -28,17 +27,13 @@ st.set_page_config(
 
 def main() -> None:
     st.title("Wolle — юнит-экономика Яндекс Маркет")
-    st.caption("Сводный обзор. WolleBuy исключён — для него нет отчёта о марже Маркета.")
+    st.caption("Сводный обзор юнит-экономики по всем магазинам.")
 
     df = safe_load_orders()
 
-    df_clean = df[~df["seller_name"].isin(get_settings().low_quality_sellers)]
-    if df_clean.empty:
-        df_clean = df
-
-    render_kpis(df_clean)
+    render_kpis(df)
     st.divider()
-    render_trend(df_clean)
+    render_trend(df)
     st.divider()
     render_navigation()
 

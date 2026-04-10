@@ -15,7 +15,7 @@ from wolle_economy.ui.components.orders.filters import (
 )
 from wolle_economy.ui.components.orders.metrics import show_metrics
 from wolle_economy.ui.components.orders.table import show_table
-from wolle_economy.ui.helpers import safe_load_orders, show_data_quality_warning
+from wolle_economy.ui.helpers import safe_load_orders
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -33,7 +33,6 @@ def main() -> None:
     # Шаг 3: In-memory фильтры (статусы, текстовый поиск)
     filtered = sidebar_memory_filters(df)
 
-    show_data_quality_warning(filtered)
     show_metrics(filtered)
     st.divider()
     show_table(filtered)

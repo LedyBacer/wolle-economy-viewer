@@ -13,10 +13,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 from wolle_economy.logging_setup import setup_logging
-from wolle_economy.ui.components.analytics.filters import (
-    apply_memory_filters,
-    sidebar_db_filters,
-)
+from wolle_economy.ui.components.analytics.filters import sidebar_db_filters
 from wolle_economy.ui.components.analytics.render import render_analytics_tabs
 from wolle_economy.ui.helpers import safe_load_orders
 
@@ -26,25 +23,20 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     st.title("Аналитика юнит-экономики")
-    st.caption(
-        "Все денежные показатели в рублях. Магазины без отчёта о марже Маркета по умолчанию исключены — переключите фильтр в боковой панели, чтобы включить их в выборку."
-    )
+    st.caption("Все денежные показатели в рублях.")
 
     # Шаг 1: DB-фильтры (продавец, дата)
-    seller_ids, date_from, date_to, exclude_low_quality = sidebar_db_filters()
+    seller_ids, date_from, date_to = sidebar_db_filters()
 
     # Шаг 2: Загрузка с фильтрацией на стороне БД
     df = safe_load_orders(seller_ids=seller_ids, date_from=date_from, date_to=date_to)
 
-    # Шаг 3: In-memory фильтр (low-quality sellers)
-    filtered = apply_memory_filters(df, exclude_low_quality)
-
-    if filtered.empty:
+    if df.empty:
         st.warning("Нет данных по выбранным фильтрам.")
         st.stop()
         return
 
-    render_analytics_tabs(filtered)
+    render_analytics_tabs(df)
 
 
 main()

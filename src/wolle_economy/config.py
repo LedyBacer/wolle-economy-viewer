@@ -26,10 +26,6 @@ class Settings(BaseSettings):
     # TTL кэша Streamlit (секунды)
     cache_ttl: int = Field(default=3600)
 
-    # Магазины без полного отчёта о марже ЯМ.
-    # Данные для них носят справочный характер и исключаются из обзорных KPI.
-    low_quality_sellers: frozenset[str] = frozenset({"WolleBuy"})
-
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
