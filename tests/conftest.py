@@ -58,6 +58,10 @@ _BASE_ROW: dict = {
     "late_ship_penalty": 0.0,
     # UI-поле
     "seller_name": "TestShop",
+    # Локация магазина: 'CN' → доставка из Китая добавляется в our_costs;
+    # 'RU' → доставка уже включена в market_services, не дублируем.
+    "seller_location": "RU",
+    "custom_delivery_fee": 0.0,
 }
 
 

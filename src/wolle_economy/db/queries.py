@@ -35,6 +35,7 @@ SELECT
     o.created_at                  AS created_at,
     o.shipment_date               AS shipment_date,
     s.seller_name                 AS seller_name,
+    s.location                    AS seller_location,
 
     -- Товар
     i.offer_id                    AS offer_id,
@@ -70,6 +71,9 @@ SELECT
     i.margin_percent              AS margin_percent,
     COALESCE(ff.value, 0)         AS ff_fee,
     COALESCE(sa.value, 0)         AS socket_adapter_fee,
+    -- Стоимость доставки из Китая (только для CN-магазинов — наш расход,
+    -- не включён в market_services; для RU-магазинов = ЯМ-доставка, уже в market_services)
+    COALESCE(i.markup_custom_delivery_fee_value_amount, 0) AS custom_delivery_fee,
 
     -- Данные из отчёта о марже (на уровне заказа)
     mr.sell_price                 AS sell_price,

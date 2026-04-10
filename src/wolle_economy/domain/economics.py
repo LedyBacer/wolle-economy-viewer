@@ -60,6 +60,12 @@ def _compute_base_totals(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
     )
     df["uses_fact_purchase_price"] = spf > 0
 
+    # Доставка из Китая — наш расход только для CN-магазинов (location = 'CN').
+    # Для RU-магазинов markup_custom_delivery_fee = ЯМ-доставка, уже удержана в market_services.
+    is_cn = df.get("seller_location", pd.Series("RU", index=df.index)) == "CN"
+    cdn = pd.to_numeric(df.get("custom_delivery_fee", pd.Series(0.0, index=df.index)), errors="coerce").fillna(0)
+    df["custom_delivery_fee_total"] = np.where(is_cn, cdn * q, 0.0)
+
     margin = df["margin_percent"].fillna(0).astype(float)
     df["our_margin"] = df["base_price_total"] * margin / 100
     df["price_with_margin"] = df["base_price_total"] * (1 + margin / 100)
@@ -221,10 +227,13 @@ def calc_economics(df: pd.DataFrame) -> pd.DataFrame:
         spf * delivered_q,
         df["base_price"] * delivered_q,
     )
+    is_cn = df.get("seller_location", pd.Series("RU", index=df.index)) == "CN"
+    cdn = pd.to_numeric(df.get("custom_delivery_fee", pd.Series(0.0, index=df.index)), errors="coerce").fillna(0)
     our_costs = (
         effective_purchase_delivered
         + df["ff_fee"] * delivered_q
         + df["socket_adapter_fee"] * delivered_q
+        + np.where(is_cn, cdn * delivered_q, 0.0)
     )
     df["our_costs"] = our_costs
 
