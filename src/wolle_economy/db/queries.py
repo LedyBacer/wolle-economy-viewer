@@ -411,6 +411,7 @@ def build_supplier_price_fact_query(
 SELLERS_SQL = text("""
 SELECT id, seller_name
 FROM e_com.platform_sellers
+WHERE platform_for_sell_id = 1
 ORDER BY seller_name
 """)
 
@@ -423,4 +424,326 @@ SELECT
     MIN(created_at)::date AS min_date,
     MAX(created_at)::date AS max_date
 FROM e_com.ya_orders
+""")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# МегаМаркет
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ---------------------------------------------------------------------------
+# Подзапрос: агрегация mm_payment_reports по заказу
+# ---------------------------------------------------------------------------
+# Маппинг полей mm_payment_reports сильно зависит от версии отчёта ММ.
+# Поля total / withheld_vat / incentive_reward / reward = итог строки (net payout).
+# COALESCE берёт первый непустой итог-поле; иначе суммирует компоненты.
+#
+# Исключаем строки вида (pcc > 0, tc IS NULL, stw IS NULL) — это субсидийные
+# строки из отдельных отчётов ММ (не входят в основную финансовую выплату).
+_MM_PR_AGG = """
+    SELECT
+        mm_dbs_orders_id1,
+        -- market_services: сумма |отрицательных| компонентов (комиссии, штрафы).
+        -- Положительные компоненты НЕ агрегируем — маппинг полей нестабилен
+        -- между версиями отчётов ММ, и итоговые суммы попадают в компонентные поля.
+        -- sell_price и expected_payout вычисляются в Python из данных заказа.
+        -- Только 6 «чистых» компонентных полей — они никогда не используются
+        -- как итоговые суммы. cancellation_before_confirmation_commission и
+        -- no_edo_commission исключены: в ряде версий отчётов ММ они хранят
+        -- итог строки (net payout), а не реальную комиссию.
+        SUM(
+            ABS(LEAST(COALESCE(transaction_commission, 0), 0))
+            + ABS(LEAST(COALESCE(product_category_commission, 0), 0))
+            + ABS(LEAST(COALESCE(seller_goods, 0), 0))
+            + ABS(LEAST(COALESCE(shipment_transfer_without_cancellation_commission, 0), 0))
+            + ABS(LEAST(COALESCE(shipment_transfer_with_cancellation_commission, 0), 0))
+            + ABS(LEAST(COALESCE(return_processing_commission, 0), 0))
+        )                                                                     AS market_services,
+        BOOL_OR(COALESCE(is_paid, FALSE))                                     AS is_paid
+    FROM e_com.mm_payment_reports
+    GROUP BY mm_dbs_orders_id1
+"""
+
+# ---------------------------------------------------------------------------
+# Подзапрос: фактическая выплата из финансовых отчётов ММ (mm_financial_report)
+# ---------------------------------------------------------------------------
+# company_debt — что ММ должен нам, seller_debt — удержания (комиссии).
+# net = company_debt − seller_debt = фактически перечисленная сумма по заказу.
+# НДС на incentive вычитается на уровне мерчанта, не попадает в per-order строки.
+_MM_FR_AGG = """
+    SELECT
+        shipment_id,
+        SUM(COALESCE(company_debt, 0)) - SUM(COALESCE(seller_debt, 0)) AS fr_net_payout
+    FROM e_com.mm_financial_report
+    WHERE shipment_id IS NOT NULL
+    GROUP BY shipment_id
+"""
+
+# ---------------------------------------------------------------------------
+# Подзапрос: фактическая закупочная цена через all_split_orders
+# ---------------------------------------------------------------------------
+# DISTINCT ON: при quantity > 1 может быть несколько all_split_orders на позицию.
+_MM_SPF = """
+    SELECT DISTINCT ON (aso.mm_dbs_order_item_id)
+        aso.mm_dbs_order_item_id,
+        COALESCE(ots.ru_custom_price, ots.ru_price, 0) AS supplier_price_fact,
+        ots.supplier_name                               AS supplier_name
+    FROM e_com.all_split_orders aso
+    LEFT JOIN e_com.order_to_supplier ots ON ots.id = aso.order_to_supplier_id
+    WHERE aso.mm_dbs_order_item_id IS NOT NULL
+    ORDER BY aso.mm_dbs_order_item_id
+"""
+
+# ---------------------------------------------------------------------------
+# МегаМаркет DBS: позиции заказов (1 строка = 1 позиция)
+# ---------------------------------------------------------------------------
+_MM_DBS_ORDER_ITEMS_SELECT = f"""
+SELECT
+    -- Идентификаторы
+    o.id                          AS mm_order_id,
+    o.shipment_id                 AS order_id,
+    i.id                          AS item_id,
+
+    -- Время и продавец
+    o.created_at                  AS created_at,
+    c.delivered_at                AS delivered_at,
+    ps.id                         AS seller_id,
+    ps.seller_name                AS seller_name,
+
+    -- Товар
+    i.offer_id                    AS offer_id,
+    i.item_name                   AS product_name,
+    i.quantity                    AS quantity,
+
+    -- Цены (за единицу)
+    i.base_price                  AS base_price,
+    i.price                       AS price,
+    i.final_price                 AS final_price,
+    i.min_allowed_price           AS margin_pct_raw,    -- ошибочное название в БД: на самом деле % маржи
+    i.margin_percent              AS min_sell_price,     -- ошибочное название в БД: на самом деле мин. допустимая цена
+    i.modifier_price              AS modifier_price,     -- цена с учётом маржи + комиссий + доставки
+
+    -- Доставка
+    o.delivery_cost               AS delivery_cost,      -- стоимость доставки, снятая с покупателя
+    o.cdek_delivery_cost          AS cdek_delivery_cost,  -- фактическая стоимость доставки для нас
+
+    -- Бонусы покупателя (incentive): часть, оплаченная бонусами (спасибо и т.д.)
+    (i.price - i.final_price)     AS incentive_amount,
+
+    -- Статусы
+    c.status                      AS cdek_status,
+    i.status                      AS item_status,
+    CASE
+        WHEN c.status = 'DELIVERED'                            THEN 'Доставлен'
+        WHEN c.status = 'NOT_DELIVERED'                        THEN 'Не доставлен'
+        WHEN c.status IN ('REMOVED', 'DELETED', 'CANCELLED')  THEN 'Отменён'
+        WHEN c.status = 'RETURNED_TO_RECIPIENT_CITY_WAREHOUSE' THEN 'Возврат'
+        WHEN c.status IS NOT NULL                              THEN 'В доставке'
+        WHEN i.status IN ('canceled', 'canceled_by_mm', 'canceled_declined') THEN 'Отменён'
+        WHEN i.status = 'delivered'                            THEN 'Доставлен'
+        WHEN i.status = 'returned'                             THEN 'Возврат'
+        ELSE 'Неизвестно'
+    END                           AS fulfillment_status,
+    CASE
+        WHEN COALESCE(pr.is_paid, FALSE) THEN 'Переведён'
+        WHEN pr.market_services > 0      THEN 'Списание'
+        ELSE NULL
+    END                                         AS payment_status,
+
+    -- Комиссии из mm_payment_reports (только отрицательные компоненты — надёжные).
+    -- sell_price и expected_payout вычисляются в Python из данных заказа,
+    -- т.к. маппинг положительных полей нестабилен между версиями отчётов ММ.
+    COALESCE(pr.market_services, 0)         AS market_services,
+
+    -- Стоимость возврата СДЭК
+    COALESCE(r.delivery_cost, 0)  AS return_delivery_cost,
+
+    -- Фактическая закупочная цена и поставщик
+    COALESCE(spf.supplier_price_fact, 0) AS supplier_price_fact,
+    spf.supplier_name                    AS supplier_name,
+
+    -- Фактическая выплата из финансовых отчётов ММ
+    COALESCE(fr.fr_net_payout, 0) AS fr_net_payout,
+
+    -- Канал
+    'dbs'                         AS channel
+
+FROM e_com.mm_dbs_orders o
+JOIN e_com.mm_dbs_order_item i
+    ON i.order_id = o.id
+JOIN e_com.platform_sellers ps
+    ON ps.id = o.seller_id
+LEFT JOIN e_com.mm_cdek_orders c
+    ON c.mm_order_id = o.id
+LEFT JOIN e_com.mm_dbs_cdek_returns r
+    ON r.mm_cdek_orders_id = c.id
+LEFT JOIN ({_MM_PR_AGG}) pr
+    ON pr.mm_dbs_orders_id1 = o.id
+LEFT JOIN ({_MM_SPF}) spf
+    ON spf.mm_dbs_order_item_id = i.id
+LEFT JOIN ({_MM_FR_AGG}) fr
+    ON fr.shipment_id = o.shipment_id
+WHERE ps.platform_for_sell_id = 5
+  AND ps.feed_type != 'POIZON'
+"""
+
+
+def build_mm_dbs_order_items_query(
+    seller_ids: tuple[int, ...] | None = None,
+    date_from: datetime.date | None = None,
+    date_to: datetime.date | None = None,
+) -> tuple[TextClause, dict[str, Any]]:
+    """Возвращает (sql, params) для DBS-заказов МегаМаркет."""
+    conditions: list[str] = []
+    params: dict[str, Any] = {}
+
+    if seller_ids:
+        conditions.append("o.seller_id = ANY(:seller_ids)")
+        params["seller_ids"] = list(seller_ids)
+    if date_from is not None:
+        conditions.append("o.created_at >= :date_from")
+        params["date_from"] = date_from
+    if date_to is not None:
+        conditions.append("o.created_at < :date_to_exclusive")
+        params["date_to_exclusive"] = date_to + datetime.timedelta(days=1)
+
+    extra = ("\n  AND " + "\n  AND ".join(conditions)) if conditions else ""
+    sql = text(_MM_DBS_ORDER_ITEMS_SELECT + extra + "\nORDER BY o.created_at DESC")
+    return sql, params
+
+
+# ---------------------------------------------------------------------------
+# МегаМаркет Poizon: позиции заказов (1 строка = 1 позиция)
+# ---------------------------------------------------------------------------
+_MM_POIZON_ORDER_ITEMS_SELECT = f"""
+SELECT
+    -- Идентификаторы
+    o.id                          AS mm_order_id,
+    o.shipment_id                 AS order_id,
+    i.id                          AS item_id,
+
+    -- Время и продавец
+    o.created_at                  AS created_at,
+    NULL::timestamptz             AS delivered_at,
+    ps.id                         AS seller_id,
+    ps.seller_name                AS seller_name,
+
+    -- Товар
+    i.offer_id                    AS offer_id,
+    i.item_name                   AS product_name,
+    i.quantity                    AS quantity,
+
+    -- Цены (за единицу)
+    i.base_price                  AS base_price,
+    i.price                       AS price,
+    i.final_price                 AS final_price,
+    i.min_allowed_price           AS margin_pct_raw,    -- ошибочное название в БД: на самом деле % маржи
+    i.margin_percent              AS min_sell_price,     -- ошибочное название в БД: на самом деле мин. допустимая цена
+    i.modifier_price              AS modifier_price,     -- цена с учётом маржи + комиссий + доставки
+
+    -- Доставка
+    o.delivery_cost               AS delivery_cost,      -- стоимость доставки, снятая с покупателя
+    COALESCE(o.cdek_delivery_cost, 0) AS cdek_delivery_cost,  -- фактическая стоимость доставки
+
+    -- Бонусы покупателя (incentive): часть, оплаченная бонусами
+    (i.price - i.final_price)     AS incentive_amount,
+
+    -- Статусы (po.status вместо СДЭК)
+    po.status                     AS cdek_status,
+    i.status                      AS item_status,
+    CASE po.status
+        WHEN 'COMPLETED' THEN 'Доставлен'
+        WHEN 'CANCELED'  THEN 'Отменён'
+        ELSE 'В доставке'
+    END                           AS fulfillment_status,
+    CASE
+        WHEN COALESCE(pr.is_paid, FALSE) THEN 'Переведён'
+        WHEN pr.market_services > 0      THEN 'Списание'
+        ELSE NULL
+    END                                         AS payment_status,
+
+    -- Комиссии из mm_payment_reports (только отрицательные компоненты).
+    COALESCE(pr.market_services, 0)         AS market_services,
+
+    -- Нет СДЭК-возврата для Poizon
+    0                             AS return_delivery_cost,
+
+    -- Фактическая закупочная цена и поставщик (через all_split_orders)
+    COALESCE(spf.supplier_price_fact, 0) AS supplier_price_fact,
+    spf.supplier_name                    AS supplier_name,
+
+    -- Цена товара на Poizon (альтернативная закупочная для аналитики)
+    pi.price                      AS poizon_price,
+
+    -- Фактическая выплата из финансовых отчётов ММ
+    COALESCE(fr.fr_net_payout, 0) AS fr_net_payout,
+
+    -- Канал
+    'poizon'                      AS channel
+
+FROM e_com.mm_dbs_orders o
+JOIN e_com.mm_dbs_order_item i
+    ON i.order_id = o.id
+JOIN e_com.mm_dbs_poizon_orders po
+    ON po.mm_dbs_orders_id = o.id
+LEFT JOIN e_com.mm_dbs_poizon_order_items pi
+    ON pi.mm_dbs_order_item_id = i.id
+JOIN e_com.platform_sellers ps
+    ON ps.id = o.seller_id
+LEFT JOIN ({_MM_PR_AGG}) pr
+    ON pr.mm_dbs_orders_id1 = o.id
+LEFT JOIN ({_MM_SPF}) spf
+    ON spf.mm_dbs_order_item_id = i.id
+LEFT JOIN ({_MM_FR_AGG}) fr
+    ON fr.shipment_id = o.shipment_id
+WHERE ps.platform_for_sell_id = 5
+  AND ps.feed_type = 'POIZON'
+"""
+
+
+def build_mm_poizon_order_items_query(
+    seller_ids: tuple[int, ...] | None = None,
+    date_from: datetime.date | None = None,
+    date_to: datetime.date | None = None,
+) -> tuple[TextClause, dict[str, Any]]:
+    """Возвращает (sql, params) для Poizon-заказов МегаМаркет."""
+    conditions: list[str] = []
+    params: dict[str, Any] = {}
+
+    if seller_ids:
+        conditions.append("o.seller_id = ANY(:seller_ids)")
+        params["seller_ids"] = list(seller_ids)
+    if date_from is not None:
+        conditions.append("o.created_at >= :date_from")
+        params["date_from"] = date_from
+    if date_to is not None:
+        conditions.append("o.created_at < :date_to_exclusive")
+        params["date_to_exclusive"] = date_to + datetime.timedelta(days=1)
+
+    extra = ("\n  AND " + "\n  AND ".join(conditions)) if conditions else ""
+    sql = text(_MM_POIZON_ORDER_ITEMS_SELECT + extra + "\nORDER BY o.created_at DESC")
+    return sql, params
+
+
+# ---------------------------------------------------------------------------
+# МегаМаркет: список продавцов
+# ---------------------------------------------------------------------------
+MM_SELLERS_SQL = text("""
+SELECT id, seller_name
+FROM e_com.platform_sellers
+WHERE platform_for_sell_id = 5
+ORDER BY seller_name
+""")
+
+
+# ---------------------------------------------------------------------------
+# МегаМаркет: диапазон дат заказов
+# ---------------------------------------------------------------------------
+MM_DATE_RANGE_SQL = text("""
+SELECT
+    MIN(o.created_at)::date AS min_date,
+    MAX(o.created_at)::date AS max_date
+FROM e_com.mm_dbs_orders o
+JOIN e_com.platform_sellers ps ON ps.id = o.seller_id
+WHERE ps.platform_for_sell_id = 5
 """)

@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python -c ':*)",
+      "Bash(.venv/bin/python)",
+      "Bash(.venv/bin/python -c \"import pandas, openpyxl, sqlalchemy, psycopg2; print\\('ok'\\)\")",
+      "Bash(.venv/bin/python -m py_compile economics.py \"pages/3_Расширенная_аналитика.py\" app.py)",
+      "mcp__context7__query-docs",
+      "Bash(python -c \"import sys; print\\(sys.version\\)\")",
+      "Bash(.venv/bin/python --version)",
+      "Bash(.venv/bin/pytest tests/ -q)",
+      "Bash(python3)",
+      "Bash(.venv/bin/python3)"
+    ]
+  }
+}

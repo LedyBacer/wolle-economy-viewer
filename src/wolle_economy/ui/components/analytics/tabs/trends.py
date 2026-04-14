@@ -7,14 +7,20 @@ from wolle_economy.ui.formatters import fmt_money
 from wolle_economy.ui.helpers import orders_dedup
 
 
-def tab_trends(df: pd.DataFrame) -> None:
+def tab_trends(df: pd.DataFrame, key_prefix: str = "ym") -> None:
     st.subheader("Тренды и динамика")
 
     if df["created_at"].isna().all():
         st.info("Нет дат заказов.")
         return
 
-    granularity = st.radio("Гранулярность", ["День", "Неделя", "Месяц"], horizontal=True, index=1)
+    granularity = st.radio(
+        "Гранулярность",
+        ["День", "Неделя", "Месяц"],
+        horizontal=True,
+        index=1,
+        key=f"{key_prefix}_trends_granularity",
+    )
     freq = {"День": "D", "Неделя": "W", "Месяц": "MS"}[granularity]
 
     od = orders_dedup(df).copy()
