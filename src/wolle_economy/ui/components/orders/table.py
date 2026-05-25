@@ -36,6 +36,7 @@ for _col, _label in COLUMN_LABELS.items():
         _COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_PCT_FMT)
     elif _col in {
         "base_price_total",
+        "effective_purchase_total",
         "ff_fee_total",
         "socket_adapter_total",
         "price_with_margin",
