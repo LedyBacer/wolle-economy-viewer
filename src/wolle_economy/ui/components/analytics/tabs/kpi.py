@@ -23,12 +23,12 @@ def tab_kpi(df: pd.DataFrame) -> None:
     st.markdown("**Деньги**")
     c = st.columns(4)
     c[0].metric("Выручка (GMV)", fmt_money(revenue))
-    c[1].metric("Выплата от ЯМ", fmt_money(payout))
+    c[1].metric("Выплата от МП", fmt_money(payout))
     c[2].metric("Прибыль (с промо)", fmt_money(profit))
     c[3].metric("Прибыль без промо", fmt_money(profit_no_pr))
 
     c = st.columns(4)
-    c[0].metric("Комиссии ЯМ", fmt_money(commissions))
+    c[0].metric("Комиссии МП", fmt_money(commissions))
     c[1].metric("Наши затраты", fmt_money(our_costs))
     c[2].metric("Промо-расходы", fmt_money(promo))
     c[3].metric("Штрафы / Компенсации", f"{fmt_money(penalties)} / {fmt_money(compensations)}")
@@ -38,7 +38,7 @@ def tab_kpi(df: pd.DataFrame) -> None:
     c = st.columns(4)
     c[0].metric("Net Margin", fmt_pct(net_margin), help="Прибыль / GMV")
     c[1].metric("Contribution Margin", fmt_pct(contrib), help="(Выплата − затраты) / GMV")
-    c[2].metric("Take Rate ЯМ", fmt_pct(take_rate), help="Комиссии ЯМ / GMV")
+    c[2].metric("Take Rate МП", fmt_pct(take_rate), help="Комиссии МП / GMV")
     c[3].metric("Доля убыточных заказов", fmt_pct(loss_share))
 
     # ---- Объёмы ----
@@ -63,7 +63,7 @@ def tab_kpi(df: pd.DataFrame) -> None:
         go.Waterfall(
             orientation="v",
             measure=["absolute", "relative", "relative", "relative", "total"],
-            x=["Выручка (GMV)", "− Комиссии ЯМ", "− Наши затраты", "+ Промо (−)", "Прибыль"],
+            x=["Выручка (GMV)", "− Комиссии МП", "− Наши затраты", "+ Промо (−)", "Прибыль"],
             y=[revenue, -commissions, -our_costs, promo, 0],
             textposition="outside",
             text=[fmt_money(v) for v in [revenue, -commissions, -our_costs, promo, profit]],
@@ -72,4 +72,3 @@ def tab_kpi(df: pd.DataFrame) -> None:
     )
     fig.update_layout(height=420, margin={"l": 20, "r": 20, "t": 20, "b": 20})
     st.plotly_chart(fig, width="stretch")
-

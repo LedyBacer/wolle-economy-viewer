@@ -6,11 +6,15 @@ from wolle_economy.ui.helpers import orders_dedup
 
 
 def render_trend(df: pd.DataFrame) -> None:
-    if df["created_at"].isna().all():
+    created_raw = pd.to_datetime(df["created_at"], errors="coerce", utc=True)
+    if created_raw.isna().all():
         return
 
     od = orders_dedup(df).copy()
     items = df.copy()
+    od["created_at"] = pd.to_datetime(od["created_at"], errors="coerce", utc=True)
+    items["created_at"] = pd.to_datetime(items["created_at"], errors="coerce", utc=True)
+
     od["week"] = od["created_at"].dt.tz_localize(None).dt.to_period("W").dt.start_time
     items["week"] = items["created_at"].dt.tz_localize(None).dt.to_period("W").dt.start_time
 
@@ -41,4 +45,3 @@ def render_trend(df: pd.DataFrame) -> None:
         hovermode="x unified",
     )
     st.plotly_chart(fig, width="stretch")
-

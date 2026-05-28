@@ -21,6 +21,33 @@ except ImportError:  # pragma: no cover
     from sqlalchemy.sql.expression import TextClause
 
 
+def _build_common_filters(
+    *,
+    seller_ids: tuple[int, ...] | None,
+    date_from: datetime.date | None,
+    date_to: datetime.date | None,
+    seller_expr: str,
+    created_at_expr: str,
+) -> tuple[list[str], dict[str, Any]]:
+    """Собирает SQL-условия фильтрации по продавцам и диапазону дат."""
+    conditions: list[str] = []
+    params: dict[str, Any] = {}
+
+    if seller_ids:
+        conditions.append(f"{seller_expr} = ANY(:seller_ids)")
+        params["seller_ids"] = list(seller_ids)
+
+    if date_from is not None:
+        conditions.append(f"{created_at_expr} >= :date_from")
+        params["date_from"] = date_from
+
+    if date_to is not None:
+        conditions.append(f"{created_at_expr} < :date_to_exclusive")
+        params["date_to_exclusive"] = date_to + datetime.timedelta(days=1)
+
+    return conditions, params
+
+
 # ---------------------------------------------------------------------------
 # Базовый SELECT для позиций заказов (без WHERE и ORDER BY)
 # ---------------------------------------------------------------------------
@@ -180,21 +207,13 @@ def build_order_items_query(
         date_from:  нижняя граница created_at (включительно); None — без ограничения.
         date_to:    верхняя граница created_at (включительно по дню); None — без ограничения.
     """
-    conditions: list[str] = []
-    params: dict[str, Any] = {}
-
-    if seller_ids:
-        conditions.append("o.seller_id = ANY(:seller_ids)")
-        params["seller_ids"] = list(seller_ids)
-
-    if date_from is not None:
-        conditions.append("o.created_at >= :date_from")
-        params["date_from"] = date_from
-
-    if date_to is not None:
-        # date_to включительно: берём начало следующего дня
-        conditions.append("o.created_at < :date_to_exclusive")
-        params["date_to_exclusive"] = date_to + datetime.timedelta(days=1)
+    conditions, params = _build_common_filters(
+        seller_ids=seller_ids,
+        date_from=date_from,
+        date_to=date_to,
+        seller_expr="o.seller_id",
+        created_at_expr="o.created_at",
+    )
 
     where = ("\nWHERE " + "\n  AND ".join(conditions)) if conditions else ""
     sql = text(_ORDER_ITEMS_SELECT + where + "\nORDER BY o.created_at DESC")
@@ -385,20 +404,13 @@ def build_supplier_price_fact_query(
     Фильтры применяются по `ya_orders` тем же набором условий, что и в
     основном запросе позиций — это сужает результат до релевантных заказов.
     """
-    conditions: list[str] = []
-    params: dict[str, Any] = {}
-
-    if seller_ids:
-        conditions.append("o.seller_id = ANY(:seller_ids)")
-        params["seller_ids"] = list(seller_ids)
-
-    if date_from is not None:
-        conditions.append("o.created_at >= :date_from")
-        params["date_from"] = date_from
-
-    if date_to is not None:
-        conditions.append("o.created_at < :date_to_exclusive")
-        params["date_to_exclusive"] = date_to + datetime.timedelta(days=1)
+    conditions, params = _build_common_filters(
+        seller_ids=seller_ids,
+        date_from=date_from,
+        date_to=date_to,
+        seller_expr="o.seller_id",
+        created_at_expr="o.created_at",
+    )
 
     where = ("\nWHERE " + "\n  AND ".join(conditions)) if conditions else ""
     sql = text(_SUPPLIER_PRICE_FACT_SELECT + where)
@@ -594,18 +606,13 @@ def build_mm_dbs_order_items_query(
     date_to: datetime.date | None = None,
 ) -> tuple[TextClause, dict[str, Any]]:
     """Возвращает (sql, params) для DBS-заказов МегаМаркет."""
-    conditions: list[str] = []
-    params: dict[str, Any] = {}
-
-    if seller_ids:
-        conditions.append("o.seller_id = ANY(:seller_ids)")
-        params["seller_ids"] = list(seller_ids)
-    if date_from is not None:
-        conditions.append("o.created_at >= :date_from")
-        params["date_from"] = date_from
-    if date_to is not None:
-        conditions.append("o.created_at < :date_to_exclusive")
-        params["date_to_exclusive"] = date_to + datetime.timedelta(days=1)
+    conditions, params = _build_common_filters(
+        seller_ids=seller_ids,
+        date_from=date_from,
+        date_to=date_to,
+        seller_expr="o.seller_id",
+        created_at_expr="o.created_at",
+    )
 
     extra = ("\n  AND " + "\n  AND ".join(conditions)) if conditions else ""
     sql = text(_MM_DBS_ORDER_ITEMS_SELECT + extra + "\nORDER BY o.created_at DESC")
@@ -707,18 +714,13 @@ def build_mm_poizon_order_items_query(
     date_to: datetime.date | None = None,
 ) -> tuple[TextClause, dict[str, Any]]:
     """Возвращает (sql, params) для Poizon-заказов МегаМаркет."""
-    conditions: list[str] = []
-    params: dict[str, Any] = {}
-
-    if seller_ids:
-        conditions.append("o.seller_id = ANY(:seller_ids)")
-        params["seller_ids"] = list(seller_ids)
-    if date_from is not None:
-        conditions.append("o.created_at >= :date_from")
-        params["date_from"] = date_from
-    if date_to is not None:
-        conditions.append("o.created_at < :date_to_exclusive")
-        params["date_to_exclusive"] = date_to + datetime.timedelta(days=1)
+    conditions, params = _build_common_filters(
+        seller_ids=seller_ids,
+        date_from=date_from,
+        date_to=date_to,
+        seller_expr="o.seller_id",
+        created_at_expr="o.created_at",
+    )
 
     extra = ("\n  AND " + "\n  AND ".join(conditions)) if conditions else ""
     sql = text(_MM_POIZON_ORDER_ITEMS_SELECT + extra + "\nORDER BY o.created_at DESC")
@@ -746,4 +748,220 @@ SELECT
 FROM e_com.mm_dbs_orders o
 JOIN e_com.platform_sellers ps ON ps.id = o.seller_id
 WHERE ps.platform_for_sell_id = 5
+""")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Sportmaster
+# ═══════════════════════════════════════════════════════════════════════════
+
+_SM_ORDER_ITEMS_SELECT = """
+SELECT
+    t1.id AS sm_order_id,
+    t1.id AS item_id,
+    t1.order_id AS order_id,
+    t1.created_at AS created_at,
+    t2.date_realization AS date_realization,
+    t1.status_name AS order_status,
+    t1.status_name AS fulfillment_status,
+    t1.offer_id AS offer_id,
+    t3.title AS product_name,
+    t1.quantity AS quantity,
+    1 AS seller_id,
+    'Sportmaster' AS seller_name,
+    'RU' AS seller_location,
+    t1.supplier_name AS supplier_name,
+    t4.shipment_date AS shipment_date,
+
+    -- Плановая/фактическая закупка (за единицу)
+    t1.supplier_price AS base_price,
+    COALESCE(t5.supplier_price, 0) AS supplier_price_fact,
+
+    -- Комиссии / расходы за единицу
+    CAST(FLOOR(t1.ff_fee) AS BIGINT) AS ff_fee,
+    CAST(FLOOR(t1.adapter_fee) AS BIGINT) AS socket_adapter_fee,
+    t1.category_fee_percent AS category_fee_percent,
+    CAST(FLOOR(t2.agent_rate_percent) AS BIGINT) AS agent_rate_percent,
+    t1.category_fee AS category_fee,
+    t2.agent_rate AS agent_rate,
+    t1.delivery_fee AS delivery_fee,
+    CAST(FLOOR(t2.logistic) AS BIGINT) AS logistic,
+
+    -- Цены продажи
+    t1.modifier_price AS modifier_price,
+    t1.min_price_multiplier AS min_price_multiplier,
+    t1.margin_price AS margin_price,
+    t1.margin_price * t1.quantity AS margin_price_total,
+    CAST(FLOOR(t2.seller_price) AS BIGINT) AS seller_price_unit,
+    CAST(FLOOR(t2.seller_price) AS BIGINT) * t1.quantity AS sell_price,
+    CAST(FLOOR(t2.seller_price) AS BIGINT) - t1.margin_price AS diff_from_min_price,
+
+    -- Расчётная/фактическая прибыль и выплаты из исходного отчёта
+    (((((t1.margin_price - t1.delivery_fee) - t1.category_fee) - t1.ff_fee) - t1.adapter_fee) - t1.supplier_price)
+        * t1.quantity AS expected_profit,
+    CASE
+        WHEN (
+            t2.seller_price IS NOT NULL
+            AND t2.logistic IS NOT NULL
+            AND t2.agent_rate IS NOT NULL
+        ) THEN CASE
+            WHEN t2.refund_total_to_seller = 0 THEN
+                ((((t2.seller_price - t2.logistic / t1.quantity) - t2.agent_rate) - t1.ff_fee) - t1.adapter_fee)
+                - CASE WHEN t5.supplier_price = 0 THEN t1.supplier_price ELSE t5.supplier_price END
+            ELSE (-t2.logistic) / t1.quantity - t1.ff_fee
+        END
+        ELSE CASE
+            WHEN t2.logistic IS NOT NULL THEN (-t2.logistic) / t1.quantity - t1.ff_fee
+            ELSE 0
+        END
+    END AS profit_unit,
+    (
+        CASE
+            WHEN (
+                t2.seller_price IS NOT NULL
+                AND t2.logistic IS NOT NULL
+                AND t2.agent_rate IS NOT NULL
+            ) THEN CASE
+                WHEN t2.refund_total_to_seller = 0 THEN
+                    ((((t2.seller_price - t2.logistic / t1.quantity) - t2.agent_rate) - t1.ff_fee) - t1.adapter_fee)
+                    - CASE WHEN t5.supplier_price = 0 THEN t1.supplier_price ELSE t5.supplier_price END
+                ELSE (-t2.logistic) / t1.quantity - t1.ff_fee
+            END
+            ELSE CASE
+                WHEN t2.logistic IS NOT NULL THEN (-t2.logistic) / t1.quantity - t1.ff_fee
+                ELSE 0
+            END
+        END
+    ) * t1.quantity AS profit,
+    CASE
+        WHEN (
+            t1.status_name IN ('Отменен', 'REJECTED', 'Отказ при получении')
+            OR t2.refund_quantity > 0
+        ) THEN CASE
+            WHEN t1.status_name LIKE 'REJECTED' THEN 0
+            ELSE CASE
+                WHEN t2.refund_quantity > 0 THEN -t1.delivery_fee - t1.ff_fee
+                ELSE -t1.delivery_fee
+            END
+        END
+        ELSE (t1.margin_price - t1.category_fee) * t1.quantity - t1.delivery_fee
+    END AS expected_payout,
+    CASE
+        WHEN (t2.total IS NOT NULL AND t2.logistic IS NOT NULL) THEN t2.total - t2.logistic
+        WHEN (t2.total IS NULL AND t2.logistic IS NOT NULL) THEN -t2.logistic
+        WHEN (t2.total IS NOT NULL AND t2.logistic IS NULL) THEN t2.total
+        ELSE 0
+    END AS payout_if_paid,
+
+    -- Поля для дополнительной логики в Python-слое
+    t2.refund_quantity AS refund_quantity,
+    t2.refund_total_to_seller AS refund_total_to_seller,
+    t2.total AS total
+
+FROM (
+    SELECT *
+    FROM e_com.sm_orders
+) AS t1
+JOIN (
+    SELECT
+        id,
+        CASE
+            WHEN (EXTRACT(DOW FROM created_at) = 6 AND created_at::time >= '09:00:00') THEN
+                date_trunc('day', created_at) + INTERVAL '2 days' + INTERVAL '6 hours'
+            WHEN EXTRACT(DOW FROM created_at) = 0 THEN
+                date_trunc('day', created_at) + INTERVAL '1 day' + INTERVAL '6 hours'
+            WHEN created_at::time >= '09:00:00' THEN
+                date_trunc('day', created_at) + INTERVAL '1 day' + INTERVAL '6 hours'
+            ELSE
+                date_trunc('day', created_at) + INTERVAL '6 hours'
+        END AS shipment_date
+    FROM e_com.sm_orders
+) AS t4
+    ON t1.id = t4.id
+FULL OUTER JOIN (
+    SELECT *
+    FROM e_com.sm_price_reports
+) AS t2
+    ON t1.id = t2.sm_orders_id
+JOIN (
+    WITH latest_stock_movement AS (
+        SELECT DISTINCT ON (smt.all_split_orders_id)
+            smt.all_split_orders_id,
+            smt.type,
+            smt.warehouse_new_id
+        FROM e_com.stock_movement_transactions smt
+        ORDER BY smt.all_split_orders_id, smt.created_at DESC
+    ),
+    first_stock_transaction AS (
+        SELECT DISTINCT ON (smt.warehouse_new_id)
+            smt.warehouse_new_id,
+            smt.all_split_orders_id AS first_source_order_id
+        FROM e_com.stock_movement_transactions smt
+        ORDER BY smt.warehouse_new_id, smt.created_at ASC
+    ),
+    source_order_mapping AS (
+        SELECT
+            sm.id AS sm_order_id,
+            CASE
+                WHEN lsm.all_split_orders_id IS NULL THEN aso.id
+                WHEN lsm.type = 'lost' THEN aso.id
+                ELSE fst.first_source_order_id
+            END AS source_all_split_orders_id
+        FROM e_com.sm_orders sm
+        INNER JOIN e_com.all_split_orders aso ON sm.id = aso.sm_orders_id
+        LEFT JOIN latest_stock_movement lsm ON aso.id = lsm.all_split_orders_id
+        LEFT JOIN first_stock_transaction fst ON lsm.warehouse_new_id = fst.warehouse_new_id
+    )
+    SELECT
+        sm.id AS sm_order_id,
+        COALESCE(ots.ru_custom_price, ots.ru_price, 0) AS supplier_price
+    FROM e_com.sm_orders sm
+    LEFT JOIN source_order_mapping som ON sm.id = som.sm_order_id
+    LEFT JOIN e_com.all_split_orders aso_source ON som.source_all_split_orders_id = aso_source.id
+    LEFT JOIN e_com.order_to_supplier ots ON aso_source.order_to_supplier_id = ots.id
+) AS t5
+    ON t1.id = t5.sm_order_id
+JOIN (
+    SELECT *
+    FROM e_com.sm_feed_items
+) AS t3
+    ON t1.feed_item_id = t3.id
+"""
+
+
+def build_sm_order_items_query(
+    seller_ids: tuple[int, ...] | None = None,
+    date_from: datetime.date | None = None,
+    date_to: datetime.date | None = None,
+) -> tuple[TextClause, dict[str, Any]]:
+    """Возвращает (sql, params) для заказов Sportmaster."""
+    conditions, params = _build_common_filters(
+        seller_ids=seller_ids,
+        date_from=date_from,
+        date_to=date_to,
+        seller_expr="sm.seller_id",
+        created_at_expr="sm.created_at",
+    )
+
+    where = ("\nWHERE " + "\n  AND ".join(conditions)) if conditions else ""
+    sql = text(
+        "SELECT * FROM (\n"
+        + _SM_ORDER_ITEMS_SELECT
+        + "\n) sm"
+        + where
+        + "\nORDER BY sm.created_at DESC"
+    )
+    return sql, params
+
+
+SM_SELLERS_SQL = text("""
+SELECT 1 AS id, 'Sportmaster' AS seller_name
+""")
+
+
+SM_DATE_RANGE_SQL = text("""
+SELECT
+    MIN(created_at)::date AS min_date,
+    MAX(created_at)::date AS max_date
+FROM e_com.sm_orders
 """)

@@ -12,63 +12,51 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 from wolle_economy.logging_setup import setup_logging
-from wolle_economy.ui.columns import UNIFIED_COLUMN_LABELS, UNIFIED_COLUMNS
-from wolle_economy.ui.formatters import fmt_money, fmt_pct
-from wolle_economy.ui.helpers import (
-    mm_orders_dedup,
-    orders_dedup,
-    safe_load_mm_orders,
-    safe_load_orders,
-)
+from wolle_economy.ui.columns import UNIFIED_COLUMNS
+from wolle_economy.ui.formatters import fmt_money, fmt_money_compact, fmt_pct
+from wolle_economy.ui.helpers import dedup_for_marketplace, safe_load_marketplace_orders
+from wolle_economy.ui.marketplaces import iter_marketplace_ui
 
 setup_logging()
 logger = logging.getLogger(__name__)
 
 
 def _add_marketplace_col(df: pd.DataFrame, marketplace: str) -> pd.DataFrame:
-    """Добавляет колонку marketplace и возвращает только общие колонки."""
     out = df.copy()
     out["marketplace"] = marketplace
-    # our_costs может отсутствовать в ЯМ DataFrame (уровень позиции) — обеспечим наличие
     for col in UNIFIED_COLUMNS:
         if col not in out.columns:
             out[col] = 0.0
     return out[UNIFIED_COLUMNS]
 
 
-def _render_comparison_kpis(df_ym: pd.DataFrame, df_mm: pd.DataFrame) -> None:
-    """KPI по каждому маркетплейсу рядом."""
-    od_ym = orders_dedup(df_ym)
-    od_mm = mm_orders_dedup(df_mm)
-
+def _render_comparison_kpis(parts: list[tuple[str, pd.DataFrame, pd.DataFrame]]) -> None:
     st.subheader("Сравнение маркетплейсов")
-    cols = st.columns(2)
-
-    for col, label, od, df in [
-        (cols[0], "Яндекс Маркет", od_ym, df_ym),
-        (cols[1], "МегаМаркет", od_mm, df_mm),
-    ]:
-        with col:
-            st.markdown(f"**{label}**")
+    for idx, (title, od, df) in enumerate(parts):
+        with st.container(border=True):
+            st.markdown(f"### {title}")
             n_orders = int(od.shape[0])
             revenue = od["sell_price"].sum()
             profit = df["profit"].sum()
             commissions = od["market_services"].sum()
             margin = profit / revenue * 100 if revenue else float("nan")
+            our_costs = df["our_costs"].sum()
 
             c = st.columns(3)
-            c[0].metric("Заказов", f"{n_orders:,}")
-            c[1].metric("Выручка", fmt_money(revenue))
-            c[2].metric("Прибыль", fmt_money(profit))
+            c[0].metric("Заказов", f"{n_orders:,}".replace(",", " "))
+            c[1].metric("Выручка", fmt_money_compact(revenue), help=fmt_money(revenue))
+            c[2].metric("Прибыль", fmt_money_compact(profit), help=fmt_money(profit))
 
             c = st.columns(3)
             c[0].metric("Маржа", fmt_pct(margin))
-            c[1].metric("Комиссии МП", fmt_money(commissions))
-            c[2].metric("Наши затраты", fmt_money(df["our_costs"].sum()))
+            c[1].metric("Комиссии МП", fmt_money_compact(commissions), help=fmt_money(commissions))
+            c[2].metric("Наши затраты", fmt_money_compact(our_costs), help=fmt_money(our_costs))
+
+        if idx < len(parts) - 1:
+            st.markdown("")
 
 
 def _render_unified_trend(df_all: pd.DataFrame) -> None:
-    """Трендовый график выручки и прибыли с разбивкой по маркетплейсу."""
     st.subheader("Тренд выручки и прибыли")
 
     df = df_all.copy()
@@ -96,26 +84,25 @@ def main() -> None:
     st.title("Сводная аналитика")
     st.caption("Общие метрики по всем маркетплейсам.")
 
-    df_ym = safe_load_orders()
-    df_mm = safe_load_mm_orders()
+    loaded: list[tuple[str, pd.DataFrame, pd.DataFrame]] = []
+    parts: list[pd.DataFrame] = []
 
-    if df_ym.empty and df_mm.empty:
+    for spec, _ in iter_marketplace_ui():
+        df = safe_load_marketplace_orders(spec)
+        if df.empty:
+            continue
+        od = dedup_for_marketplace(df, spec)
+        loaded.append((spec.title, od, df))
+        parts.append(_add_marketplace_col(df, spec.title))
+
+    if not loaded:
         st.warning("Нет данных ни по одному маркетплейсу.")
         st.stop()
         return
 
-    _render_comparison_kpis(df_ym, df_mm)
+    _render_comparison_kpis(loaded)
     st.divider()
-
-    # Объединённый DataFrame для трендов
-    parts = []
-    if not df_ym.empty:
-        parts.append(_add_marketplace_col(df_ym, "Яндекс Маркет"))
-    if not df_mm.empty:
-        parts.append(_add_marketplace_col(df_mm, "МегаМаркет"))
-    df_all = pd.concat(parts, ignore_index=True)
-
-    _render_unified_trend(df_all)
+    _render_unified_trend(pd.concat(parts, ignore_index=True))
 
 
 main()

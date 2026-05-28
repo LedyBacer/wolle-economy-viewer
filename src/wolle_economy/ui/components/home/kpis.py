@@ -16,7 +16,6 @@ def render_kpis(df: pd.DataFrame) -> None:
 
     c = st.columns(4)
     c[0].metric("Средний чек", fmt_money(m.aov))
-    c[1].metric("Выплачено от ЯМ", fmt_money(m.payout))
-    c[2].metric("Комиссии ЯМ", fmt_money(m.commissions))
+    c[1].metric("Выплачено от МП", fmt_money(m.payout))
+    c[2].metric("Комиссии МП", fmt_money(m.commissions))
     c[3].metric("Наши затраты", fmt_money(m.our_costs))
-

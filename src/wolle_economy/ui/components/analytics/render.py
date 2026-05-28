@@ -12,7 +12,7 @@ from wolle_economy.ui.components.analytics.tabs.suppliers import tab_suppliers
 from wolle_economy.ui.components.analytics.tabs.trends import tab_trends
 
 
-def render_analytics_tabs(df: pd.DataFrame) -> None:
+def render_analytics_tabs(df: pd.DataFrame, key_prefix: str = "ym") -> None:
     tabs = st.tabs(
         [
             "KPI",
@@ -42,7 +42,6 @@ def render_analytics_tabs(df: pd.DataFrame) -> None:
     with tabs[6]:
         tab_ops(df)
     with tabs[7]:
-        tab_trends(df)
+        tab_trends(df, key_prefix=key_prefix)
     with tabs[8]:
         tab_distribution(df)
-
