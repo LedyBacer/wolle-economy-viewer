@@ -752,6 +752,268 @@ WHERE ps.platform_for_sell_id = 5
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Wildberries
+# ═══════════════════════════════════════════════════════════════════════════
+
+_WB_ORDER_ITEMS_SELECT = """
+WITH
+latest_stock_movement AS (
+    SELECT DISTINCT ON (smt.all_split_orders_id)
+        smt.all_split_orders_id,
+        smt.type,
+        smt.warehouse_new_id
+    FROM e_com.stock_movement_transactions smt
+    ORDER BY smt.all_split_orders_id, smt.created_at DESC
+),
+first_stock_transaction AS (
+    SELECT DISTINCT ON (smt.warehouse_new_id)
+        smt.warehouse_new_id,
+        smt.all_split_orders_id AS first_source_order_id
+    FROM e_com.stock_movement_transactions smt
+    ORDER BY smt.warehouse_new_id, smt.created_at ASC
+),
+source_order_mapping AS (
+    SELECT
+        wb.id AS wb_order_id,
+        CASE
+            WHEN lsm.all_split_orders_id IS NULL THEN aso.id
+            WHEN lsm.type = 'lost'               THEN aso.id
+            ELSE fst.first_source_order_id
+        END AS source_all_split_orders_id
+    FROM e_com.wb_orders wb
+    INNER JOIN e_com.all_split_orders aso ON wb.id = aso.wb_orders_id
+    LEFT JOIN latest_stock_movement lsm ON aso.id = lsm.all_split_orders_id
+    LEFT JOIN first_stock_transaction fst ON lsm.warehouse_new_id = fst.warehouse_new_id
+),
+supplier_prices AS (
+    SELECT
+        wb.id AS wb_order_id,
+        COALESCE(ots.ru_custom_price, ots.ru_price, 0) AS supplier_price_fact,
+        ots.supplier_name AS supplier_name
+    FROM e_com.wb_orders wb
+    LEFT JOIN source_order_mapping som ON wb.id = som.wb_order_id
+    LEFT JOIN e_com.all_split_orders aso_source ON som.source_all_split_orders_id = aso_source.id
+    LEFT JOIN e_com.order_to_supplier ots
+        ON ots.id = COALESCE(aso_source.order_to_supplier_id, aso_source.unique_product_id)
+)
+SELECT
+    o.id AS wb_order_id,
+    o.id AS item_id,
+    o.order_id AS order_id,
+    o.created_at + INTERVAL '3 HOUR' AS created_at,
+    CASE
+        WHEN (
+            EXTRACT(DOW FROM o.created_at + INTERVAL '3 HOUR') = 6
+            AND (o.created_at + INTERVAL '3 HOUR')::time >= '09:00:00'
+        ) THEN date_trunc('day', o.created_at + INTERVAL '3 HOUR') + INTERVAL '2 days' + INTERVAL '6 hours'
+        WHEN EXTRACT(DOW FROM o.created_at + INTERVAL '3 HOUR') = 0
+        THEN date_trunc('day', o.created_at + INTERVAL '3 HOUR') + INTERVAL '1 day' + INTERVAL '6 hours'
+        WHEN (o.created_at + INTERVAL '3 HOUR')::time >= '09:00:00'
+        THEN date_trunc('day', o.created_at + INTERVAL '3 HOUR') + INTERVAL '1 day' + INTERVAL '6 hours'
+        ELSE date_trunc('day', o.created_at + INTERVAL '3 HOUR') + INTERVAL '6 hours'
+    END AS shipment_date,
+    o.seller_id AS seller_id,
+    ps.seller_name AS seller_name,
+    ps.location AS seller_location,
+    o.offer_id AS offer_id,
+    fi.title AS product_name,
+    COALESCE(o.supplier_name, sp.supplier_name) AS supplier_name,
+    1::bigint AS quantity,
+    o.wb_status AS wb_status,
+    CASE o.wb_status
+        WHEN 'waiting' THEN 'в работе'
+        WHEN 'sorted' THEN 'отсортирован'
+        WHEN 'sold' THEN 'получен'
+        WHEN 'canceled' THEN 'отмена'
+        WHEN 'canceled_by_client' THEN 'отмена при получении'
+        WHEN 'declined_by_client' THEN 'отмена до сборки'
+        WHEN 'defect' THEN 'отмена по браку'
+        WHEN 'ready_for_pickup' THEN 'прибыл в ПВЗ'
+        WHEN 'postponed_delivery' THEN 'курьерская доставка отложена'
+        ELSE o.wb_status
+    END AS order_status,
+    CASE o.wb_status
+        WHEN 'waiting' THEN 'в работе'
+        WHEN 'sorted' THEN 'отсортирован'
+        WHEN 'sold' THEN 'получен'
+        WHEN 'canceled' THEN 'отмена'
+        WHEN 'canceled_by_client' THEN 'отмена при получении'
+        WHEN 'declined_by_client' THEN 'отмена до сборки'
+        WHEN 'defect' THEN 'отмена по браку'
+        WHEN 'ready_for_pickup' THEN 'прибыл в ПВЗ'
+        WHEN 'postponed_delivery' THEN 'курьерская доставка отложена'
+        ELSE o.wb_status
+    END AS fulfillment_status,
+    o.base_price AS base_price,
+    COALESCE(sp.supplier_price_fact, 0) AS supplier_price_fact,
+    COALESCE(o.ff_fee, 50) AS ff_fee,
+    COALESCE(o.socket_adapter_fee, 0) AS socket_adapter_fee,
+    COALESCE(o.final_price, 0) AS min_sell_price,
+    COALESCE(o.sale_price_ru, o.final_price, 0) AS sell_price_plan,
+    COALESCE(o.margin_percent, 0) AS margin_percent,
+    COALESCE(o.category_fee, 0) AS category_fee,
+    COALESCE(o.acquiring_fee, 0) AS acquiring_fee_plan,
+    COALESCE(o.delivery_fee, 0) AS delivery_fee_plan,
+    COALESCE(ra.report_sell_price, 0) AS report_sell_price,
+    COALESCE(ra.report_commission, 0) AS report_commission,
+    COALESCE(ra.report_acquiring_fee, 0) AS report_acquiring_fee,
+    COALESCE(ra.report_delivery_fee, 0) AS report_delivery_fee,
+    COALESCE(ra.report_penalty, 0) AS report_penalty,
+    COALESCE(ra.report_acceptance, 0) AS report_acceptance,
+    COALESCE(ra.report_storage_fee, 0) AS report_storage_fee,
+    COALESCE(ra.report_market_services, 0) AS report_market_services,
+    COALESCE(ra.report_compensation, 0) AS report_compensation,
+    COALESCE(ra.return_docs, 0) AS return_docs,
+    COALESCE(ra.report_rows, 0) AS report_rows
+FROM e_com.wb_orders o
+JOIN e_com.wb_feed_items fi ON fi.id = o.feed_item_id
+JOIN e_com.platform_sellers ps ON ps.id = o.seller_id
+LEFT JOIN supplier_prices sp ON sp.wb_order_id = o.id
+LEFT JOIN LATERAL (
+    SELECT
+        SUM(
+            CASE r.doc_type_name
+                WHEN 'Продажа' THEN COALESCE(r.retail_price, 0)
+                WHEN 'Возврат' THEN -COALESCE(r.retail_price, 0)
+                WHEN '销售' THEN COALESCE(r.retail_price, 0) * CASE
+                    WHEN fi.platform_seller_id = 11
+                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
+                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
+                    ELSE 1
+                END
+                WHEN '退货' THEN -COALESCE(r.retail_price, 0) * CASE
+                    WHEN fi.platform_seller_id = 11
+                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
+                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
+                    ELSE 1
+                END
+                ELSE 0
+            END
+        ) AS report_sell_price,
+        SUM(
+            CASE r.doc_type_name
+                WHEN 'Продажа' THEN (COALESCE(r.retail_price, 0) * COALESCE(r.commission_percent, 0)) / 100
+                WHEN 'Возврат' THEN ((-COALESCE(r.retail_price, 0)) * COALESCE(r.commission_percent, 0)) / 100
+                WHEN '销售' THEN (COALESCE(r.retail_price, 0) * CASE
+                    WHEN fi.platform_seller_id = 11
+                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
+                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
+                    ELSE 1
+                END * COALESCE(r.commission_percent, 0)) / 100
+                WHEN '退货' THEN ((-COALESCE(r.retail_price, 0)) * CASE
+                    WHEN fi.platform_seller_id = 11
+                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
+                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
+                    ELSE 1
+                END * COALESCE(r.commission_percent, 0)) / 100
+                ELSE 0
+            END
+        ) AS report_commission,
+        SUM(COALESCE(r.acquiring_fee, 0)) AS report_acquiring_fee,
+        SUM(
+            CASE
+                WHEN r.currency_name = 'cny'
+                THEN COALESCE(r.delivery_rub, 0) * CASE
+                    WHEN fi.platform_seller_id = 11
+                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
+                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
+                    ELSE 1
+                END
+                ELSE COALESCE(r.delivery_rub, 0)
+            END
+        ) AS report_delivery_fee,
+        SUM(COALESCE(r.penalty, 0)) AS report_penalty,
+        SUM(COALESCE(r.acceptance, 0)) AS report_acceptance,
+        SUM(COALESCE(r.storage_fee, 0)) AS report_storage_fee,
+        SUM(
+            CASE
+                WHEN r.supplier_oper_name LIKE 'Возмещение издержек по перевозке/по складским операциям с товаром'
+                THEN COALESCE(r.ppvz_vw, 0) + COALESCE(r.ppvz_vw_nds, 0) + COALESCE(r.rebill_logistic_cost, 0)
+                ELSE 0
+            END
+        ) AS report_compensation,
+        COUNT(*) FILTER (WHERE r.doc_type_name IN ('Возврат', '退货')) AS return_docs,
+        COUNT(r.id) AS report_rows,
+        SUM(
+            CASE r.doc_type_name
+                WHEN 'Продажа' THEN (COALESCE(r.retail_price, 0) * COALESCE(r.commission_percent, 0)) / 100
+                WHEN 'Возврат' THEN ((-COALESCE(r.retail_price, 0)) * COALESCE(r.commission_percent, 0)) / 100
+                WHEN '销售' THEN (COALESCE(r.retail_price, 0) * CASE
+                    WHEN fi.platform_seller_id = 11
+                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
+                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
+                    ELSE 1
+                END * COALESCE(r.commission_percent, 0)) / 100
+                WHEN '退货' THEN ((-COALESCE(r.retail_price, 0)) * CASE
+                    WHEN fi.platform_seller_id = 11
+                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
+                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
+                    ELSE 1
+                END * COALESCE(r.commission_percent, 0)) / 100
+                ELSE 0
+            END
+        )
+        + SUM(COALESCE(r.acquiring_fee, 0))
+        + SUM(
+            CASE
+                WHEN r.currency_name = 'cny'
+                THEN COALESCE(r.delivery_rub, 0) * CASE
+                    WHEN fi.platform_seller_id = 11
+                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
+                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
+                    ELSE 1
+                END
+                ELSE COALESCE(r.delivery_rub, 0)
+            END
+        )
+        + SUM(COALESCE(r.penalty, 0))
+        + SUM(COALESCE(r.acceptance, 0))
+        + SUM(COALESCE(r.storage_fee, 0)) AS report_market_services
+    FROM e_com.wb_reports r
+    WHERE r.wb_orders_id = o.id
+) ra ON TRUE
+WHERE ps.platform_for_sell_id = 3
+"""
+
+
+def build_wb_order_items_query(
+    seller_ids: tuple[int, ...] | None = None,
+    date_from: datetime.date | None = None,
+    date_to: datetime.date | None = None,
+) -> tuple[TextClause, dict[str, Any]]:
+    """Возвращает (sql, params) для заказов Wildberries."""
+    conditions, params = _build_common_filters(
+        seller_ids=seller_ids,
+        date_from=date_from,
+        date_to=date_to,
+        seller_expr="o.seller_id",
+        created_at_expr="o.created_at",
+    )
+
+    extra = ("\n  AND " + "\n  AND ".join(conditions)) if conditions else ""
+    sql = text(_WB_ORDER_ITEMS_SELECT + extra + "\nORDER BY o.created_at DESC")
+    return sql, params
+
+
+WB_SELLERS_SQL = text("""
+SELECT id, seller_name
+FROM e_com.platform_sellers
+WHERE platform_for_sell_id = 3
+ORDER BY seller_name
+""")
+
+
+WB_DATE_RANGE_SQL = text("""
+SELECT
+    MIN(o.created_at)::date AS min_date,
+    MAX(o.created_at)::date AS max_date
+FROM e_com.wb_orders o
+JOIN e_com.platform_sellers ps ON ps.id = o.seller_id
+WHERE ps.platform_for_sell_id = 3
+""")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Sportmaster
 # ═══════════════════════════════════════════════════════════════════════════
 

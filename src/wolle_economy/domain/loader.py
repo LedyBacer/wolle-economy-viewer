@@ -25,16 +25,20 @@ from wolle_economy.db.queries import (
     SELLERS_SQL,
     SM_DATE_RANGE_SQL,
     SM_SELLERS_SQL,
+    WB_DATE_RANGE_SQL,
+    WB_SELLERS_SQL,
     build_mm_dbs_order_items_query,
     build_mm_poizon_order_items_query,
     build_order_items_query,
     build_payment_aggregates_query,
     build_sm_order_items_query,
     build_supplier_price_fact_query,
+    build_wb_order_items_query,
 )
 from wolle_economy.domain.economics import calc_economics, merge_with_payments
 from wolle_economy.domain.economics_mm import calc_mm_economics
 from wolle_economy.domain.economics_sm import calc_sm_economics
+from wolle_economy.domain.economics_wb import calc_wb_economics
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +73,7 @@ def _load_orders_for_code(
         "ym": _load_ym_orders_impl,
         "mm": _load_mm_orders_impl,
         "sm": _load_sm_orders_impl,
+        "wb": _load_wb_orders_impl,
     }
     return impl_by_code[code](
         seller_ids=seller_ids,
@@ -295,6 +300,70 @@ def load_sm_orders(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Wildberries
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _load_wb_orders_impl(
+    seller_ids: tuple[int, ...] | None = None,
+    date_from: datetime.date | None = None,
+    date_to: datetime.date | None = None,
+) -> pd.DataFrame:
+    logger.info(
+        "Загрузка заказов WB: seller_ids=%s date_from=%s date_to=%s",
+        seller_ids,
+        date_from,
+        date_to,
+    )
+    engine = get_engine()
+    sql, params = build_wb_order_items_query(seller_ids, date_from, date_to)
+
+    try:
+        with engine.connect() as conn:
+            orders = pd.read_sql_query(sql, conn, params=params)
+    except SQLAlchemyError:
+        logger.exception("Ошибка SQLAlchemy при загрузке данных WB из БД")
+        raise
+
+    logger.info("Загружено строк WB: %d", len(orders))
+    return calc_wb_economics(orders)
+
+
+@st.cache_data(ttl=get_settings().cache_ttl, show_spinner=False)
+def load_wb_sellers() -> pd.DataFrame:
+    """Возвращает DataFrame с колонками id, seller_name для Wildberries."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        return pd.read_sql(WB_SELLERS_SQL, conn)
+
+
+@st.cache_data(ttl=get_settings().cache_ttl, show_spinner=False)
+def load_wb_date_range() -> tuple[datetime.date, datetime.date]:
+    """Возвращает (min_date, max_date) дат создания заказов WB."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(WB_DATE_RANGE_SQL).fetchone()
+    if row is None or row[0] is None:
+        return _fallback_date_range()
+    return row[0], row[1]
+
+
+@st.cache_data(ttl=get_settings().cache_ttl, show_spinner="Загрузка данных Wildberries…")
+def load_wb_orders(
+    seller_ids: tuple[int, ...] | None = None,
+    date_from: datetime.date | None = None,
+    date_to: datetime.date | None = None,
+) -> pd.DataFrame:
+    """Публичный загрузчик заказов Wildberries."""
+    return _load_orders_for_code(
+        "wb",
+        seller_ids=seller_ids,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Реестр маркетплейсов
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -326,6 +395,15 @@ MARKETPLACE_SPECS: tuple[MarketplaceSpec, ...] = (
         load_date_range=load_sm_date_range,
         order_key="sm_order_id",
         ui_profile={"filters_key": "sm", "table": "sm", "analytics": "sm"},
+    ),
+    MarketplaceSpec(
+        code="wb",
+        title="Wildberries",
+        load_orders=load_wb_orders,
+        load_sellers=load_wb_sellers,
+        load_date_range=load_wb_date_range,
+        order_key="wb_order_id",
+        ui_profile={"filters_key": "wb", "table": "wb", "analytics": "wb"},
     ),
 )
 

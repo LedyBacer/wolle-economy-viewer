@@ -19,12 +19,18 @@ from wolle_economy.ui.components.orders.filters_sm import (
     sidebar_sm_db_filters,
     sidebar_sm_memory_filters,
 )
+from wolle_economy.ui.components.orders.filters_wb import (
+    sidebar_wb_db_filters,
+    sidebar_wb_memory_filters,
+)
 from wolle_economy.ui.components.orders.metrics import show_metrics
 from wolle_economy.ui.components.orders.metrics_mm import show_mm_metrics
 from wolle_economy.ui.components.orders.metrics_sm import show_sm_metrics
+from wolle_economy.ui.components.orders.metrics_wb import show_wb_metrics
 from wolle_economy.ui.components.orders.table import show_table
 from wolle_economy.ui.components.orders.table_mm import show_mm_table
 from wolle_economy.ui.components.orders.table_sm import show_sm_table
+from wolle_economy.ui.components.orders.table_wb import show_wb_table
 
 DbFiltersFn = Callable[[], tuple[tuple[int, ...] | None, datetime.date, datetime.date]]
 MemoryFiltersFn = Callable[[pd.DataFrame], pd.DataFrame]
@@ -54,6 +60,10 @@ def _render_sm_analytics(df: pd.DataFrame) -> None:
     render_analytics_tabs(df, key_prefix="sm")
 
 
+def _render_wb_analytics(df: pd.DataFrame) -> None:
+    render_analytics_tabs(df, key_prefix="wb")
+
+
 _UI_BY_CODE: dict[str, MarketplaceUIHandlers] = {
     "ym": MarketplaceUIHandlers(
         db_filters=sidebar_db_filters,
@@ -75,6 +85,13 @@ _UI_BY_CODE: dict[str, MarketplaceUIHandlers] = {
         metrics=show_sm_metrics,
         table=show_sm_table,
         analytics=_render_sm_analytics,
+    ),
+    "wb": MarketplaceUIHandlers(
+        db_filters=sidebar_wb_db_filters,
+        memory_filters=sidebar_wb_memory_filters,
+        metrics=show_wb_metrics,
+        table=show_wb_table,
+        analytics=_render_wb_analytics,
     ),
 }
 

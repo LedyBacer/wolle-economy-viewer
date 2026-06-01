@@ -7,7 +7,7 @@ import wolle_economy.domain.loader as loader
 
 def test_marketplace_specs_have_required_fields() -> None:
     specs = loader.get_marketplace_specs()
-    assert {s.code for s in specs} == {"ym", "mm", "sm"}
+    assert {s.code for s in specs} == {"ym", "mm", "sm", "wb"}
 
     for spec in specs:
         assert spec.title
@@ -42,4 +42,13 @@ def test_load_sm_orders_wrapper_routes_to_sm_impl(monkeypatch) -> None:
     loader.load_sm_orders.clear()
 
     got = loader.load_sm_orders()
+    assert got.equals(expected)
+
+
+def test_load_wb_orders_wrapper_routes_to_wb_impl(monkeypatch) -> None:
+    expected = pd.DataFrame([{"source": "wb"}])
+    monkeypatch.setattr(loader, "_load_wb_orders_impl", lambda **_: expected)
+    loader.load_wb_orders.clear()
+
+    got = loader.load_wb_orders()
     assert got.equals(expected)

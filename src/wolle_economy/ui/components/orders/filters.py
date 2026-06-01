@@ -5,6 +5,8 @@ import streamlit as st
 
 from wolle_economy.domain.loader import load_date_range, load_sellers
 
+_NO_PAYMENT_STATUS_LABEL = "Без статуса"
+
 
 def sidebar_db_filters_for(
     *,
@@ -69,7 +71,8 @@ def sidebar_memory_filters_for(
             key=f"{key_prefix}_status",
         )
 
-        pay_statuses = sorted(df["payment_status"].dropna().unique())
+        payment_status_for_filter = df["payment_status"].fillna(_NO_PAYMENT_STATUS_LABEL)
+        pay_statuses = sorted(payment_status_for_filter.unique())
         sel_pay = st.multiselect(
             "Статус платежа",
             pay_statuses,
@@ -95,7 +98,7 @@ def sidebar_memory_filters_for(
             else ""
         )
 
-    mask = df["fulfillment_status"].isin(sel_statuses) & df["payment_status"].isin(sel_pay)
+    mask = df["fulfillment_status"].isin(sel_statuses) & payment_status_for_filter.isin(sel_pay)
     if sel_channels is not None:
         mask &= df["channel"].isin(sel_channels)
     if offer_q:
