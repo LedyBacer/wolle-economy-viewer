@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import datetime
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -22,6 +22,8 @@ from wolle_economy.db.queries import (
     DATE_RANGE_SQL,
     MM_DATE_RANGE_SQL,
     MM_SELLERS_SQL,
+    OZ_DATE_RANGE_SQL,
+    OZ_SELLERS_SQL,
     SELLERS_SQL,
     SM_DATE_RANGE_SQL,
     SM_SELLERS_SQL,
@@ -30,6 +32,7 @@ from wolle_economy.db.queries import (
     build_mm_dbs_order_items_query,
     build_mm_poizon_order_items_query,
     build_order_items_query,
+    build_oz_order_items_query,
     build_payment_aggregates_query,
     build_sm_order_items_query,
     build_supplier_price_fact_query,
@@ -37,6 +40,7 @@ from wolle_economy.db.queries import (
 )
 from wolle_economy.domain.economics import calc_economics, merge_with_payments
 from wolle_economy.domain.economics_mm import calc_mm_economics
+from wolle_economy.domain.economics_oz import calc_oz_economics
 from wolle_economy.domain.economics_sm import calc_sm_economics
 from wolle_economy.domain.economics_wb import calc_wb_economics
 
@@ -69,13 +73,15 @@ def _load_orders_for_code(
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
 ) -> pd.DataFrame:
+    canonical_code = _normalize_marketplace_code(code)
     impl_by_code: dict[str, Callable[..., pd.DataFrame]] = {
         "ym": _load_ym_orders_impl,
         "mm": _load_mm_orders_impl,
         "sm": _load_sm_orders_impl,
         "wb": _load_wb_orders_impl,
+        "oz": _load_oz_orders_impl,
     }
-    return impl_by_code[code](
+    return impl_by_code[canonical_code](
         seller_ids=seller_ids,
         date_from=date_from,
         date_to=date_to,
@@ -364,6 +370,70 @@ def load_wb_orders(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Ozon
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _load_oz_orders_impl(
+    seller_ids: tuple[int, ...] | None = None,
+    date_from: datetime.date | None = None,
+    date_to: datetime.date | None = None,
+) -> pd.DataFrame:
+    logger.info(
+        "Загрузка заказов OZ: seller_ids=%s date_from=%s date_to=%s",
+        seller_ids,
+        date_from,
+        date_to,
+    )
+    engine = get_engine()
+    sql, params = build_oz_order_items_query(seller_ids, date_from, date_to)
+
+    try:
+        with engine.connect() as conn:
+            orders = pd.read_sql_query(sql, conn, params=params)
+    except SQLAlchemyError:
+        logger.exception("Ошибка SQLAlchemy при загрузке данных OZ из БД")
+        raise
+
+    logger.info("Загружено строк OZ: %d", len(orders))
+    return calc_oz_economics(orders)
+
+
+@st.cache_data(ttl=get_settings().cache_ttl, show_spinner=False)
+def load_oz_sellers() -> pd.DataFrame:
+    """Возвращает DataFrame с колонками id, seller_name для Ozon."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        return pd.read_sql(OZ_SELLERS_SQL, conn)
+
+
+@st.cache_data(ttl=get_settings().cache_ttl, show_spinner=False)
+def load_oz_date_range() -> tuple[datetime.date, datetime.date]:
+    """Возвращает (min_date, max_date) дат создания заказов Ozon."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(OZ_DATE_RANGE_SQL).fetchone()
+    if row is None or row[0] is None:
+        return _fallback_date_range()
+    return row[0], row[1]
+
+
+@st.cache_data(ttl=get_settings().cache_ttl, show_spinner="Загрузка данных Ozon…")
+def load_oz_orders(
+    seller_ids: tuple[int, ...] | None = None,
+    date_from: datetime.date | None = None,
+    date_to: datetime.date | None = None,
+) -> pd.DataFrame:
+    """Публичный загрузчик заказов Ozon."""
+    return _load_orders_for_code(
+        "oz",
+        seller_ids=seller_ids,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Реестр маркетплейсов
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -405,7 +475,38 @@ MARKETPLACE_SPECS: tuple[MarketplaceSpec, ...] = (
         order_key="wb_order_id",
         ui_profile={"filters_key": "wb", "table": "wb", "analytics": "wb"},
     ),
+    MarketplaceSpec(
+        code="oz",
+        title="Ozon",
+        load_orders=load_oz_orders,
+        load_sellers=load_oz_sellers,
+        load_date_range=load_oz_date_range,
+        order_key="oz_order_id",
+        ui_profile={"filters_key": "oz", "table": "oz", "analytics": "oz"},
+    ),
 )
+
+_MARKETPLACE_ALIASES: dict[str, str] = {
+    "ym": "ym",
+    "yandex": "ym",
+    "яндекс": "ym",
+    "mm": "mm",
+    "megamarket": "mm",
+    "мегамаркет": "mm",
+    "sm": "sm",
+    "sportmaster": "sm",
+    "спортмастер": "sm",
+    "wb": "wb",
+    "wildberries": "wb",
+    "вайлдберриз": "wb",
+    "oz": "oz",
+    "ozon": "oz",
+    "озон": "oz",
+}
+
+
+def _normalize_marketplace_code(code: str) -> str:
+    return _MARKETPLACE_ALIASES.get(code.strip().lower(), code.strip().lower())
 
 
 def get_marketplace_specs() -> tuple[MarketplaceSpec, ...]:
@@ -415,8 +516,9 @@ def get_marketplace_specs() -> tuple[MarketplaceSpec, ...]:
 
 def get_marketplace_spec(code: str) -> MarketplaceSpec:
     """Возвращает spec маркетплейса по коду."""
+    canonical_code = _normalize_marketplace_code(code)
     for spec in MARKETPLACE_SPECS:
-        if spec.code == code:
+        if spec.code == canonical_code:
             return spec
     raise KeyError(f"Unknown marketplace code: {code}")
 

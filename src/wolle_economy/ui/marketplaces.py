@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import datetime
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import pandas as pd
 
@@ -14,6 +14,10 @@ from wolle_economy.ui.components.orders.filters import sidebar_db_filters, sideb
 from wolle_economy.ui.components.orders.filters_mm import (
     sidebar_mm_db_filters,
     sidebar_mm_memory_filters,
+)
+from wolle_economy.ui.components.orders.filters_oz import (
+    sidebar_oz_db_filters,
+    sidebar_oz_memory_filters,
 )
 from wolle_economy.ui.components.orders.filters_sm import (
     sidebar_sm_db_filters,
@@ -25,10 +29,12 @@ from wolle_economy.ui.components.orders.filters_wb import (
 )
 from wolle_economy.ui.components.orders.metrics import show_metrics
 from wolle_economy.ui.components.orders.metrics_mm import show_mm_metrics
+from wolle_economy.ui.components.orders.metrics_oz import show_oz_metrics
 from wolle_economy.ui.components.orders.metrics_sm import show_sm_metrics
 from wolle_economy.ui.components.orders.metrics_wb import show_wb_metrics
 from wolle_economy.ui.components.orders.table import show_table
 from wolle_economy.ui.components.orders.table_mm import show_mm_table
+from wolle_economy.ui.components.orders.table_oz import show_oz_table
 from wolle_economy.ui.components.orders.table_sm import show_sm_table
 from wolle_economy.ui.components.orders.table_wb import show_wb_table
 
@@ -64,6 +70,10 @@ def _render_wb_analytics(df: pd.DataFrame) -> None:
     render_analytics_tabs(df, key_prefix="wb")
 
 
+def _render_oz_analytics(df: pd.DataFrame) -> None:
+    render_analytics_tabs(df, key_prefix="oz")
+
+
 _UI_BY_CODE: dict[str, MarketplaceUIHandlers] = {
     "ym": MarketplaceUIHandlers(
         db_filters=sidebar_db_filters,
@@ -92,6 +102,13 @@ _UI_BY_CODE: dict[str, MarketplaceUIHandlers] = {
         metrics=show_wb_metrics,
         table=show_wb_table,
         analytics=_render_wb_analytics,
+    ),
+    "oz": MarketplaceUIHandlers(
+        db_filters=sidebar_oz_db_filters,
+        memory_filters=sidebar_oz_memory_filters,
+        metrics=show_oz_metrics,
+        table=show_oz_table,
+        analytics=_render_oz_analytics,
     ),
 }
 

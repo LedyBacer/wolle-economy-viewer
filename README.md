@@ -1,7 +1,7 @@
 # Wolle Economy Viewer
 
 Streamlit-приложение для анализа юнит-экономики заказов с маркетплейсов
-(Яндекс Маркет, МегаМаркет, Sportmaster, Wildberries).
+(Яндекс Маркет, МегаМаркет, Sportmaster, Wildberries, Ozon).
 Данные читаются из PostgreSQL (`e_commerce`, схема `e_com`).
 
 ## Требования

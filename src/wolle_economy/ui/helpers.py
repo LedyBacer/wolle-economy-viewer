@@ -157,15 +157,36 @@ def safe_load_wb_orders(
     )
 
 
+def oz_orders_dedup(df: pd.DataFrame) -> pd.DataFrame:
+    """Дедуп заказов Ozon."""
+    return orders_dedup_by_key(df, "oz_order_id")
+
+
+def safe_load_oz_orders(
+    seller_ids: tuple[int, ...] | None = None,
+    date_from: datetime.date | None = None,
+    date_to: datetime.date | None = None,
+) -> pd.DataFrame:
+    """Safe loader Ozon."""
+    return safe_load_marketplace_orders(
+        get_marketplace_spec("oz"),
+        seller_ids=seller_ids,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+
 # Явные re-export для обратной совместимости импортов в других модулях.
 __all__ = [
     "dedup_for_marketplace",
     "mm_orders_dedup",
     "orders_dedup",
     "orders_dedup_by_key",
+    "oz_orders_dedup",
     "safe_load_marketplace_orders",
     "safe_load_mm_orders",
     "safe_load_orders",
+    "safe_load_oz_orders",
     "safe_load_sm_orders",
     "safe_load_wb_orders",
     "sm_orders_dedup",

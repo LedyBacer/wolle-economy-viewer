@@ -752,6 +752,230 @@ WHERE ps.platform_for_sell_id = 5
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Ozon
+# ═══════════════════════════════════════════════════════════════════════════
+
+_OZ_ORDER_ITEMS_SELECT = """
+WITH
+ozon_transactions_agg AS (
+    SELECT
+        ozon_orders_id,
+        SUM(CASE WHEN service_name_ru ILIKE '%%вознаграждение за продажу%%' THEN -price ELSE 0 END) AS category_fee_fact,
+        SUM(CASE WHEN operation_type_name ILIKE '%%Оплата эквайринга%%' THEN -price ELSE 0 END) AS acquiring_fee_fact,
+        SUM(CASE
+                WHEN service_name IN (
+                    'MarketplaceServiceItemRedistributionLastMilePVZ',
+                    'MarketplaceServiceItemRedistributionLastMileCourier',
+                    'MarketplaceServiceItemDelivToCustomer'
+                )
+                THEN -price
+                ELSE 0
+            END) AS last_mile_fact,
+        SUM(CASE WHEN service_name_ru ILIKE '%%Обработка отправления Drop-off%%' THEN -price ELSE 0 END) AS order_process_fact,
+        SUM(CASE WHEN service_name_ru ILIKE '%%логистика%%' THEN -price ELSE 0 END) AS logistics_fact,
+        CASE
+            WHEN SUM(CASE WHEN service_name = 'Revenue' THEN 1 ELSE 0 END) > 0
+            THEN SUM(price)
+            ELSE 0
+        END AS revenue_after_commission,
+        SUM(CASE
+                WHEN operation_type_name ILIKE '%%операционных ошибок продавца: отмена%%'
+                THEN -price
+                ELSE 0
+            END) AS cancel_penalty,
+        SUM(CASE
+                WHEN operation_type_name ILIKE '%%операционных ошибок продавца: поздняя отгрузка%%'
+                THEN -price
+                ELSE 0
+            END) AS late_shipment_penalty,
+        SUM(CASE
+                WHEN operation_type_name ILIKE '%%Обработка операционных ошибок продавца: отгрузка в нерекомендованный слот%%'
+                THEN -price
+                ELSE 0
+            END) AS late_recommend_penalty,
+        COUNT(*) AS report_rows
+    FROM e_com.ozon_order_transactions
+    GROUP BY ozon_orders_id
+),
+latest_stock_movement AS (
+    SELECT DISTINCT ON (smt.all_split_orders_id)
+        smt.all_split_orders_id,
+        smt.type,
+        smt.warehouse_new_id
+    FROM e_com.stock_movement_transactions smt
+    ORDER BY smt.all_split_orders_id, smt.created_at DESC
+),
+first_stock_transaction AS (
+    SELECT DISTINCT ON (smt.warehouse_new_id)
+        smt.warehouse_new_id,
+        smt.all_split_orders_id AS first_source_order_id
+    FROM e_com.stock_movement_transactions smt
+    ORDER BY smt.warehouse_new_id, smt.created_at ASC
+),
+source_order_mapping AS (
+    SELECT
+        oz.id AS oz_order_id,
+        CASE
+            WHEN lsm.all_split_orders_id IS NULL THEN aso.id
+            WHEN lsm.type = 'lost'               THEN aso.id
+            ELSE fst.first_source_order_id
+        END AS source_all_split_orders_id
+    FROM e_com.ozon_orders oz
+    INNER JOIN e_com.all_split_orders aso ON oz.id = aso.ozon_orders_id
+    LEFT JOIN latest_stock_movement lsm ON aso.id = lsm.all_split_orders_id
+    LEFT JOIN first_stock_transaction fst ON lsm.warehouse_new_id = fst.warehouse_new_id
+),
+supplier_prices AS (
+    SELECT DISTINCT ON (oz.id)
+        oz.id AS oz_order_id,
+        COALESCE(ots.ru_custom_price, ots.ru_price, 0) AS supplier_price_fact,
+        ots.supplier_name AS supplier_name
+    FROM e_com.ozon_orders oz
+    LEFT JOIN source_order_mapping som ON oz.id = som.oz_order_id
+    LEFT JOIN e_com.all_split_orders aso_source ON som.source_all_split_orders_id = aso_source.id
+    LEFT JOIN e_com.order_to_supplier ots
+        ON ots.id = aso_source.unique_product_id
+    ORDER BY oz.id, aso_source.id
+)
+SELECT
+    o.id AS oz_order_id,
+    o.id AS item_id,
+    o.order_id AS order_id,
+    o.created_at + INTERVAL '3 HOUR' AS created_at,
+    CASE
+        WHEN (
+            EXTRACT(DOW FROM o.created_at + INTERVAL '3 HOUR') = 6
+            AND (o.created_at + INTERVAL '3 HOUR')::time >= '09:00:00'
+        ) THEN date_trunc('day', o.created_at + INTERVAL '3 HOUR') + INTERVAL '2 days' + INTERVAL '6 hours'
+        WHEN EXTRACT(DOW FROM o.created_at + INTERVAL '3 HOUR') = 0
+        THEN date_trunc('day', o.created_at + INTERVAL '3 HOUR') + INTERVAL '1 day' + INTERVAL '6 hours'
+        WHEN (o.created_at + INTERVAL '3 HOUR')::time >= '09:00:00'
+        THEN date_trunc('day', o.created_at + INTERVAL '3 HOUR') + INTERVAL '1 day' + INTERVAL '6 hours'
+        ELSE date_trunc('day', o.created_at + INTERVAL '3 HOUR') + INTERVAL '6 hours'
+    END AS shipment_date,
+    fi.platform_seller_id AS seller_id,
+    ps.seller_name AS seller_name,
+    ps.location AS seller_location,
+    o.offer_id AS offer_id,
+    fi.title AS product_name,
+    COALESCE(o.supplier_name, sp.supplier_name) AS supplier_name,
+    COALESCE(o.quantity, 1)::bigint AS quantity,
+    o.status AS oz_status,
+    CASE
+        WHEN o.status = 'delivered' THEN
+            CASE
+                WHEN COALESCE(r.quantity, 0) > 0 THEN
+                    CASE
+                        WHEN COALESCE(r.quantity, 0) < COALESCE(o.quantity, 1) THEN 'Частичный возврат'
+                        ELSE 'Возврат'
+                    END
+                ELSE 'Доставлен'
+            END
+        WHEN o.status = 'awaiting_packaging' THEN 'Ожидает сборки'
+        WHEN o.status IN ('delivering', 'awaiting_deliver') THEN 'Доставляется'
+        WHEN o.status = 'cancelled' THEN 'Отменен'
+        ELSE o.status
+    END AS order_status,
+    CASE
+        WHEN o.status = 'delivered' THEN
+            CASE
+                WHEN COALESCE(r.quantity, 0) > 0 THEN
+                    CASE
+                        WHEN COALESCE(r.quantity, 0) < COALESCE(o.quantity, 1) THEN 'Частичный возврат'
+                        ELSE 'Возврат'
+                    END
+                ELSE 'Доставлен'
+            END
+        WHEN o.status = 'awaiting_packaging' THEN 'Ожидает сборки'
+        WHEN o.status IN ('delivering', 'awaiting_deliver') THEN 'Доставляется'
+        WHEN o.status = 'cancelled' THEN 'Отменен'
+        ELSE o.status
+    END AS fulfillment_status,
+    COALESCE(o.supplier_price, 0)::double precision AS base_price,
+    COALESCE(sp.supplier_price_fact, 0)::double precision AS supplier_price_fact,
+    COALESCE(o.ff_fee, 50)::double precision AS ff_fee,
+    COALESCE(o.socket_adapter_fee, 0)::double precision AS socket_adapter_fee,
+    COALESCE(o.margin_price, o.price, 0)::double precision AS min_sell_price,
+    (COALESCE(o.price, 0) * COALESCE(o.quantity, 1))::double precision AS sell_price_plan,
+    (COALESCE(o.category_fee, 0) * COALESCE(o.quantity, 1))::double precision AS category_fee,
+    (COALESCE(o.acquiring_fee, 0) * COALESCE(o.quantity, 1))::double precision AS acquiring_fee_plan,
+    (
+        (COALESCE(o.delivery_fee, 0) + COALESCE(o.order_process_fee, 0) + COALESCE(o.last_mile, 0))
+        * COALESCE(o.quantity, 1)
+    )::double precision AS delivery_fee_plan,
+    (
+        COALESCE(o.price, 0) * GREATEST(COALESCE(o.quantity, 1) - COALESCE(r.quantity, 0), 0)
+    )::double precision AS report_sell_price,
+    (
+        COALESCE(ta.category_fee_fact, 0)
+        + COALESCE(ta.acquiring_fee_fact, 0)
+        + COALESCE(ta.last_mile_fact, 0)
+        + COALESCE(ta.order_process_fact, 0)
+        + COALESCE(ta.logistics_fact, 0)
+    )::double precision AS report_market_services,
+    COALESCE(ta.revenue_after_commission, 0)::double precision AS revenue_after_commission,
+    COALESCE(ta.order_process_fact, 0)::double precision AS order_process_fact,
+    COALESCE(ta.logistics_fact, 0)::double precision AS logistics_fact,
+    0::double precision AS report_compensation,
+    CASE
+        WHEN COALESCE(r.quantity, 0) > 0 THEN 1
+        ELSE 0
+    END::double precision AS return_docs,
+    COALESCE(r.quantity, 0)::double precision AS refund_quantity,
+    COALESCE(o.cancelled_after_ship, FALSE) AS cancelled_after_ship,
+    COALESCE(ta.report_rows, 0)::double precision AS report_rows,
+    COALESCE(ta.cancel_penalty, 0)::double precision AS cancel_penalty,
+    COALESCE(ta.late_shipment_penalty, 0)::double precision AS late_shipment_penalty,
+    COALESCE(ta.late_recommend_penalty, 0)::double precision AS late_recommend_penalty
+FROM e_com.ozon_orders o
+JOIN e_com.ozon_feed_items fi ON fi.id = o.feed_item_id
+JOIN e_com.platform_sellers ps ON ps.id = fi.platform_seller_id
+LEFT JOIN e_com.ozon_refunds r ON r.id = o.ozon_refunds_id
+LEFT JOIN ozon_transactions_agg ta ON ta.ozon_orders_id = o.id
+LEFT JOIN supplier_prices sp ON sp.oz_order_id = o.id
+WHERE ps.platform_for_sell_id = 2
+"""
+
+
+def build_oz_order_items_query(
+    seller_ids: tuple[int, ...] | None = None,
+    date_from: datetime.date | None = None,
+    date_to: datetime.date | None = None,
+) -> tuple[TextClause, dict[str, Any]]:
+    """Возвращает (sql, params) для заказов Ozon."""
+    conditions, params = _build_common_filters(
+        seller_ids=seller_ids,
+        date_from=date_from,
+        date_to=date_to,
+        seller_expr="fi.platform_seller_id",
+        created_at_expr="o.created_at",
+    )
+
+    extra = ("\n  AND " + "\n  AND ".join(conditions)) if conditions else ""
+    sql = text(_OZ_ORDER_ITEMS_SELECT + extra + "\nORDER BY o.created_at DESC")
+    return sql, params
+
+
+OZ_SELLERS_SQL = text("""
+SELECT id, seller_name
+FROM e_com.platform_sellers
+WHERE platform_for_sell_id = 2
+ORDER BY seller_name
+""")
+
+
+OZ_DATE_RANGE_SQL = text("""
+SELECT
+    MIN(o.created_at)::date AS min_date,
+    MAX(o.created_at)::date AS max_date
+FROM e_com.ozon_orders o
+JOIN e_com.ozon_feed_items fi ON fi.id = o.feed_item_id
+JOIN e_com.platform_sellers ps ON ps.id = fi.platform_seller_id
+WHERE ps.platform_for_sell_id = 2
+""")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Wildberries
 # ═══════════════════════════════════════════════════════════════════════════
 
