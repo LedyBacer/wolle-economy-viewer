@@ -26,7 +26,13 @@ def calc_wb_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["ya_order_id"] = out["wb_order_id"]
     out["channel"] = "wildberries"
 
-    out["base_price"] = _num(out.get("base_price", pd.Series(0.0, index=out.index)))
+    base_price_raw = pd.to_numeric(out.get("base_price", pd.Series(np.nan, index=out.index)), errors="coerce")
+    sell_price_plan_raw = pd.to_numeric(
+        out.get("sell_price_plan", pd.Series(np.nan, index=out.index)),
+        errors="coerce",
+    )
+
+    out["base_price"] = base_price_raw.fillna(0.0)
     out["base_price_total"] = out["base_price"] * q
 
     out["supplier_price_fact"] = _num(out.get("supplier_price_fact", pd.Series(0.0, index=out.index)))
@@ -49,7 +55,7 @@ def calc_wb_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["price_with_margin"] = out["min_sell_price_total"]
     out["our_margin"] = out["price_with_margin"] - out["base_price_total"]
 
-    out["sell_price_plan"] = _num(out.get("sell_price_plan", pd.Series(0.0, index=out.index)))
+    out["sell_price_plan"] = sell_price_plan_raw.fillna(0.0)
     out["calc_commissions"] = (
         _num(out.get("category_fee", pd.Series(0.0, index=out.index)))
         + _num(out.get("acquiring_fee_plan", pd.Series(0.0, index=out.index)))
@@ -57,54 +63,96 @@ def calc_wb_economics(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     out["expected_payout"] = (out["sell_price_plan"] - out["calc_commissions"]).clip(lower=0)
-    out["expected_profit"] = out["expected_payout"] - (
-        out["base_price_total"] + out["ff_fee_total"] + out["socket_adapter_total"]
+    expected_profit_raw = (
+        sell_price_plan_raw
+        - out["socket_adapter_total"]
+        - (base_price_raw * q)
+        - out["ff_fee_total"]
+        - _num(out.get("category_fee", pd.Series(0.0, index=out.index)))
+        - _num(out.get("acquiring_fee_plan", pd.Series(0.0, index=out.index)))
+        - _num(out.get("delivery_fee_plan", pd.Series(0.0, index=out.index)))
     )
+    out["expected_profit"] = expected_profit_raw.fillna(0.0)
 
     wb_status = out.get("wb_status", pd.Series("", index=out.index)).fillna("")
     return_docs = _num(out.get("return_docs", pd.Series(0.0, index=out.index)))
 
     out["is_cancelled_before"] = wb_status.isin(_WB_CANCELLED_BEFORE)
     out["is_returned"] = wb_status.isin(_WB_RETURNED) | (return_docs > 0)
-    out["is_delivered"] = wb_status.isin(_WB_DELIVERED) & ~out["is_returned"]
+    is_sold_status = wb_status.isin(_WB_DELIVERED)
+    out["is_delivered"] = is_sold_status & ~out["is_returned"]
     out["is_cancelled_any"] = out["is_cancelled_before"] | out["is_returned"]
 
-    report_sell = _num(out.get("report_sell_price", pd.Series(0.0, index=out.index)))
+    report_sell_raw = pd.to_numeric(
+        out.get("report_sell_price", pd.Series(np.nan, index=out.index)),
+        errors="coerce",
+    )
+    report_sell = report_sell_raw.fillna(0.0)
     report_rows = _num(out.get("report_rows", pd.Series(0.0, index=out.index)))
 
-    out["sell_price"] = np.where(
-        out["is_delivered"],
-        np.where(report_rows > 0, report_sell, out["sell_price_plan"]),
-        0.0,
-    )
+    out["sell_price"] = np.where(report_rows > 0, report_sell, 0.0)
 
-    report_market_services = _num(out.get("report_market_services", pd.Series(0.0, index=out.index)))
+    report_market_services_raw = pd.to_numeric(
+        out.get("report_market_services", pd.Series(np.nan, index=out.index)),
+        errors="coerce",
+    )
+    report_income_raw = report_sell_raw - report_market_services_raw
+    out["compensations"] = _num(out.get("report_compensation", pd.Series(0.0, index=out.index))).clip(lower=0)
+
+    report_income = report_income_raw.fillna(0.0)
+    out["income_after_fees"] = np.where(report_rows > 0, report_income, 0.0)
     out["market_services"] = np.where(
         report_rows > 0,
-        report_market_services,
-        np.where(out["is_delivered"], out["calc_commissions"], 0.0),
+        out["sell_price"] - out["income_after_fees"],
+        0.0,
     )
     out["fact_commissions"] = out["market_services"].clip(lower=0)
-
-    report_compensation = _num(out.get("report_compensation", pd.Series(0.0, index=out.index)))
-    out["compensations"] = report_compensation.clip(lower=0)
-
-    out["income_after_fees"] = (out["sell_price"] - out["market_services"]).clip(lower=0)
     if "promo_discounts" not in out.columns:
         out["promo_discounts"] = 0.0
     out["promo_discounts"] = _num(out["promo_discounts"])
     out["income_after_fees_promo"] = out["income_after_fees"] + out["promo_discounts"]
 
-    out["our_costs"] = np.where(
-        out["is_delivered"],
-        out["effective_purchase_total"] + out["ff_fee_total"] + out["socket_adapter_total"],
-        np.where(out["is_returned"], out["ff_fee_total"] + out["socket_adapter_total"], 0.0),
+    report_retail_sum = pd.to_numeric(out.get("report_retail_sum", report_sell_raw), errors="coerce")
+    returned_once = return_docs == 1
+    sold_profit = np.select(
+        [
+            report_retail_sum.fillna(0.0) == 0,
+            report_income_raw.isna(),
+            returned_once,
+        ],
+        [
+            0.0,
+            0.0,
+            out["income_after_fees"] - out["socket_adapter_total"] - out["ff_fee_total"],
+        ],
+        default=(
+            out["income_after_fees"]
+            - out["effective_purchase_total"]
+            - out["socket_adapter_total"]
+            - out["ff_fee_total"]
+        ),
     )
-
-    base_profit = np.where(
-        out["is_delivered"],
-        out["income_after_fees"] - out["our_costs"],
-        np.where(out["is_returned"], report_compensation - out["market_services"], 0.0),
+    base_profit = np.select(
+        [
+            is_sold_status,
+            wb_status.isin(_WB_RETURNED),
+        ],
+        [
+            sold_profit,
+            out["income_after_fees"],
+        ],
+        default=0.0,
+    )
+    out["our_costs"] = np.select(
+        [
+            is_sold_status & ~returned_once & (report_retail_sum.fillna(0.0) != 0),
+            is_sold_status & returned_once,
+        ],
+        [
+            out["effective_purchase_total"] + out["ff_fee_total"] + out["socket_adapter_total"],
+            out["ff_fee_total"] + out["socket_adapter_total"],
+        ],
+        default=0.0,
     )
 
     out["profit_no_promo"] = base_profit

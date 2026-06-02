@@ -72,7 +72,7 @@ def test_cancelled_before_flags_and_zero_finance() -> None:
     assert pd.isna(df["payment_status"].iloc[0])
 
 
-def test_returned_uses_report_compensation() -> None:
+def test_returned_status_uses_income_after_fees() -> None:
     df = calc_wb_economics(
         make_wb_orders(
             wb_status="canceled_by_client",
@@ -83,5 +83,5 @@ def test_returned_uses_report_compensation() -> None:
         )
     )
     assert df["is_returned"].iloc[0] == True  # noqa: E712
-    # profit_no_promo = compensation - market_services
-    assert df["profit_no_promo"].iloc[0] == pytest.approx(-105.0)
+    # DataLens reference: canceled/returned statuses use income after WB fees.
+    assert df["profit_no_promo"].iloc[0] == pytest.approx(-120.0)

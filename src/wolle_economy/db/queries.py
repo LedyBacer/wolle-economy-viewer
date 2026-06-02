@@ -1018,7 +1018,7 @@ supplier_prices AS (
     LEFT JOIN source_order_mapping som ON wb.id = som.wb_order_id
     LEFT JOIN e_com.all_split_orders aso_source ON som.source_all_split_orders_id = aso_source.id
     LEFT JOIN e_com.order_to_supplier ots
-        ON ots.id = COALESCE(aso_source.order_to_supplier_id, aso_source.unique_product_id)
+        ON ots.id = aso_source.unique_product_id
 )
 SELECT
     o.id AS wb_order_id,
@@ -1073,20 +1073,21 @@ SELECT
     COALESCE(o.ff_fee, 50) AS ff_fee,
     COALESCE(o.socket_adapter_fee, 0) AS socket_adapter_fee,
     COALESCE(o.final_price, 0) AS min_sell_price,
-    COALESCE(o.sale_price_ru, o.final_price, 0) AS sell_price_plan,
+    COALESCE(o.sale_price_ru, o.final_price) AS sell_price_plan,
     COALESCE(o.margin_percent, 0) AS margin_percent,
     COALESCE(o.category_fee, 0) AS category_fee,
     COALESCE(o.acquiring_fee, 0) AS acquiring_fee_plan,
     COALESCE(o.delivery_fee, 0) AS delivery_fee_plan,
-    COALESCE(ra.report_sell_price, 0) AS report_sell_price,
-    COALESCE(ra.report_commission, 0) AS report_commission,
-    COALESCE(ra.report_acquiring_fee, 0) AS report_acquiring_fee,
-    COALESCE(ra.report_delivery_fee, 0) AS report_delivery_fee,
-    COALESCE(ra.report_penalty, 0) AS report_penalty,
-    COALESCE(ra.report_acceptance, 0) AS report_acceptance,
-    COALESCE(ra.report_storage_fee, 0) AS report_storage_fee,
-    COALESCE(ra.report_market_services, 0) AS report_market_services,
-    COALESCE(ra.report_compensation, 0) AS report_compensation,
+    ra.report_sell_price AS report_sell_price,
+    ra.report_retail_sum AS report_retail_sum,
+    ra.report_commission AS report_commission,
+    ra.report_acquiring_fee AS report_acquiring_fee,
+    ra.report_delivery_fee AS report_delivery_fee,
+    ra.report_penalty AS report_penalty,
+    ra.report_acceptance AS report_acceptance,
+    ra.report_storage_fee AS report_storage_fee,
+    ra.report_market_services AS report_market_services,
+    ra.report_compensation AS report_compensation,
     COALESCE(ra.return_docs, 0) AS return_docs,
     COALESCE(ra.report_rows, 0) AS report_rows
 FROM e_com.wb_orders o
@@ -1097,102 +1098,80 @@ LEFT JOIN LATERAL (
     SELECT
         SUM(
             CASE r.doc_type_name
-                WHEN 'Продажа' THEN COALESCE(r.retail_price, 0)
-                WHEN 'Возврат' THEN -COALESCE(r.retail_price, 0)
-                WHEN '销售' THEN COALESCE(r.retail_price, 0) * CASE
+                WHEN 'Продажа' THEN r.retail_price
+                WHEN 'Возврат' THEN -r.retail_price
+                WHEN '销售' THEN r.retail_price * CASE
                     WHEN fi.platform_seller_id = 11
-                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
-                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
-                    ELSE 1
-                END
-                WHEN '退货' THEN -COALESCE(r.retail_price, 0) * CASE
-                    WHEN fi.platform_seller_id = 11
-                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
-                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
+                    THEN o.sale_price_ru / (CAST(o.converted_price AS DOUBLE PRECISION) / 100)
                     ELSE 1
                 END
                 ELSE 0
             END
         ) AS report_sell_price,
+        SUM(r.retail_price) AS report_retail_sum,
         SUM(
             CASE r.doc_type_name
-                WHEN 'Продажа' THEN (COALESCE(r.retail_price, 0) * COALESCE(r.commission_percent, 0)) / 100
-                WHEN 'Возврат' THEN ((-COALESCE(r.retail_price, 0)) * COALESCE(r.commission_percent, 0)) / 100
-                WHEN '销售' THEN (COALESCE(r.retail_price, 0) * CASE
+                WHEN 'Продажа' THEN (r.retail_price * r.commission_percent) / 100
+                WHEN 'Возврат' THEN ((-r.retail_price) * r.commission_percent) / 100
+                WHEN '销售' THEN (r.retail_price * CASE
                     WHEN fi.platform_seller_id = 11
-                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
-                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
+                    THEN o.sale_price_ru / (CAST(o.converted_price AS DOUBLE PRECISION) / 100)
                     ELSE 1
-                END * COALESCE(r.commission_percent, 0)) / 100
-                WHEN '退货' THEN ((-COALESCE(r.retail_price, 0)) * CASE
-                    WHEN fi.platform_seller_id = 11
-                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
-                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
-                    ELSE 1
-                END * COALESCE(r.commission_percent, 0)) / 100
+                END * r.commission_percent) / 100
                 ELSE 0
             END
         ) AS report_commission,
-        SUM(COALESCE(r.acquiring_fee, 0)) AS report_acquiring_fee,
+        SUM(r.acquiring_fee) AS report_acquiring_fee,
         SUM(
             CASE
                 WHEN r.currency_name = 'cny'
-                THEN COALESCE(r.delivery_rub, 0) * CASE
+                THEN r.delivery_rub * CASE
                     WHEN fi.platform_seller_id = 11
-                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
-                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
+                    THEN o.sale_price_ru / (CAST(o.converted_price AS DOUBLE PRECISION) / 100)
                     ELSE 1
                 END
-                ELSE COALESCE(r.delivery_rub, 0)
+                ELSE r.delivery_rub
             END
         ) AS report_delivery_fee,
-        SUM(COALESCE(r.penalty, 0)) AS report_penalty,
-        SUM(COALESCE(r.acceptance, 0)) AS report_acceptance,
-        SUM(COALESCE(r.storage_fee, 0)) AS report_storage_fee,
+        SUM(r.penalty) AS report_penalty,
+        SUM(r.acceptance) AS report_acceptance,
+        SUM(r.storage_fee) AS report_storage_fee,
         SUM(
             CASE
                 WHEN r.supplier_oper_name LIKE 'Возмещение издержек по перевозке/по складским операциям с товаром'
-                THEN COALESCE(r.ppvz_vw, 0) + COALESCE(r.ppvz_vw_nds, 0) + COALESCE(r.rebill_logistic_cost, 0)
+                THEN r.ppvz_vw + r.ppvz_vw_nds + r.rebill_logistic_cost
                 ELSE 0
             END
         ) AS report_compensation,
-        COUNT(*) FILTER (WHERE r.doc_type_name IN ('Возврат', '退货')) AS return_docs,
+        COUNT(*) FILTER (WHERE r.doc_type_name = 'Возврат') AS return_docs,
         COUNT(r.id) AS report_rows,
         SUM(
             CASE r.doc_type_name
-                WHEN 'Продажа' THEN (COALESCE(r.retail_price, 0) * COALESCE(r.commission_percent, 0)) / 100
-                WHEN 'Возврат' THEN ((-COALESCE(r.retail_price, 0)) * COALESCE(r.commission_percent, 0)) / 100
-                WHEN '销售' THEN (COALESCE(r.retail_price, 0) * CASE
+                WHEN 'Продажа' THEN (r.retail_price * r.commission_percent) / 100
+                WHEN 'Возврат' THEN ((-r.retail_price) * r.commission_percent) / 100
+                WHEN '销售' THEN (r.retail_price * CASE
                     WHEN fi.platform_seller_id = 11
-                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
-                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
+                    THEN o.sale_price_ru / (CAST(o.converted_price AS DOUBLE PRECISION) / 100)
                     ELSE 1
-                END * COALESCE(r.commission_percent, 0)) / 100
-                WHEN '退货' THEN ((-COALESCE(r.retail_price, 0)) * CASE
-                    WHEN fi.platform_seller_id = 11
-                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
-                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
-                    ELSE 1
-                END * COALESCE(r.commission_percent, 0)) / 100
+                END * r.commission_percent) / 100
                 ELSE 0
             END
         )
-        + SUM(COALESCE(r.acquiring_fee, 0))
+        + SUM(r.acquiring_fee)
         + SUM(
             CASE
                 WHEN r.currency_name = 'cny'
-                THEN COALESCE(r.delivery_rub, 0) * CASE
+                THEN r.delivery_rub * CASE
                     WHEN fi.platform_seller_id = 11
-                     AND NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0) IS NOT NULL
-                    THEN COALESCE(o.sale_price_ru, o.final_price, 0) / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
+                    THEN o.sale_price_ru / (CAST(o.converted_price AS DOUBLE PRECISION) / 100)
                     ELSE 1
                 END
-                ELSE COALESCE(r.delivery_rub, 0)
+                ELSE r.delivery_rub
             END
         )
-        + SUM(COALESCE(r.penalty, 0))
-        + SUM(COALESCE(r.acceptance, 0))
-        + SUM(COALESCE(r.storage_fee, 0)) AS report_market_services
+        + SUM(r.penalty)
+        + SUM(r.acceptance)
+        + SUM(r.storage_fee) AS report_market_services
     FROM e_com.wb_reports r
     WHERE r.wb_orders_id = o.id
 ) ra ON TRUE
