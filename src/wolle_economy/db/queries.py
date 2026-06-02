@@ -1410,7 +1410,7 @@ def build_sm_order_items_query(
 
     where = ("\nWHERE " + "\n  AND ".join(conditions)) if conditions else ""
     sql = text(
-        "SELECT * FROM (\n"
+        "SELECT DISTINCT * FROM (\n"
         + _SM_ORDER_ITEMS_SELECT
         + "\n) sm"
         + where

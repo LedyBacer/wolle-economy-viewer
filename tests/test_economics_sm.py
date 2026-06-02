@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from wolle_economy.domain.economics_sm import calc_sm_economics
+from wolle_economy.db.queries import build_sm_order_items_query
 
 _SM_BASE_ROW: dict = {
     "sm_order_id": 7001,
@@ -91,3 +92,9 @@ def test_lags_and_margin_fields_exist() -> None:
     assert "margin_plan_pct" in df.columns
     assert "margin_fact_pct" in df.columns
     assert pd.notna(df["ship_lag_days"].iloc[0])
+
+
+def test_sm_query_matches_datalens_row_grouping() -> None:
+    sql, _ = build_sm_order_items_query()
+
+    assert str(sql).lstrip().startswith("SELECT DISTINCT * FROM")
