@@ -5,7 +5,7 @@ import pytest
 
 from wolle_economy.db.queries import build_oz_order_items_query
 from wolle_economy.domain.economics_oz import calc_oz_economics
-from wolle_economy.ui.components.orders.table_oz import _OZ_ALL_COLUMNS
+from wolle_economy.ui.components.orders.table_oz import _OZ_ALL_COLUMNS, _OZ_COLUMN_LABELS
 
 _OZ_BASE_ROW: dict = {
     "oz_order_id": 8001,
@@ -162,6 +162,12 @@ def test_show_all_columns_include_datalens_reference_fields() -> None:
     }
 
     assert expected.issubset(_OZ_ALL_COLUMNS)
+
+
+def test_show_all_columns_have_unique_display_labels() -> None:
+    labels = [_OZ_COLUMN_LABELS.get(col, col) for col in _OZ_ALL_COLUMNS]
+
+    assert len(labels) == len(set(labels))
 
 
 def test_oz_query_includes_datalens_reference_fields() -> None:
