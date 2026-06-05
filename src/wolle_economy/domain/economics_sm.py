@@ -30,6 +30,7 @@ def calc_sm_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["base_price_total"] = out["base_price"] * q
 
     out["supplier_price_fact"] = _num(out.get("supplier_price_fact", pd.Series(0.0, index=out.index)))
+    out["supplier_price_fact_total"] = out["supplier_price_fact"] * q
     out["effective_purchase_total"] = np.where(
         out["supplier_price_fact"] > 0,
         out["supplier_price_fact"] * q,
@@ -105,6 +106,10 @@ def calc_sm_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["margin_fact_rub"] = out["profit"]
     out["margin_plan_on_cost_pct"] = (out["our_margin"] / bp * 100).round(2)
     out["margin_fact_on_cost_pct"] = (out["profit"] / bp * 100).round(2)
+    base_price_unit = out["base_price"].replace(0, np.nan)
+    out["sm_profit_on_purchase_pct"] = (
+        _num(out.get("profit_unit", pd.Series(0.0, index=out.index))) / base_price_unit * 100
+    ).round(2)
 
     created = pd.to_datetime(out["created_at"], errors="coerce", utc=True)
     shipped = pd.to_datetime(out.get("shipment_date"), errors="coerce", utc=True)

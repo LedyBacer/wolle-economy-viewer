@@ -5,6 +5,7 @@ import pytest
 
 from wolle_economy.domain.economics_sm import calc_sm_economics
 from wolle_economy.db.queries import build_sm_order_items_query
+from wolle_economy.ui.components.orders.table_sm import _SM_ALL_COLUMNS
 
 _SM_BASE_ROW: dict = {
     "sm_order_id": 7001,
@@ -92,6 +93,30 @@ def test_lags_and_margin_fields_exist() -> None:
     assert "margin_plan_pct" in df.columns
     assert "margin_fact_pct" in df.columns
     assert pd.notna(df["ship_lag_days"].iloc[0])
+
+
+def test_reference_fields_exist() -> None:
+    df = calc_sm_economics(make_sm_orders(profit_unit=225.0))
+
+    assert df["supplier_price_fact_total"].iloc[0] == pytest.approx(1800.0)
+    assert df["sm_profit_on_purchase_pct"].iloc[0] == pytest.approx(22.5)
+
+
+def test_show_all_columns_include_datalens_reference_fields() -> None:
+    expected = {
+        "date_realization",
+        "supplier_price_fact_total",
+        "category_fee_percent",
+        "agent_rate_percent",
+        "logistic",
+        "modifier_price",
+        "sm_profit_on_purchase_pct",
+        "seller_price_unit",
+        "profit_unit",
+        "payout_if_paid",
+    }
+
+    assert expected.issubset(_SM_ALL_COLUMNS)
 
 
 def test_sm_query_matches_datalens_row_grouping() -> None:
