@@ -3,7 +3,9 @@
 import pandas as pd
 import pytest
 
+from wolle_economy.db.queries import build_oz_order_items_query
 from wolle_economy.domain.economics_oz import calc_oz_economics
+from wolle_economy.ui.components.orders.table_oz import _OZ_ALL_COLUMNS
 
 _OZ_BASE_ROW: dict = {
     "oz_order_id": 8001,
@@ -117,3 +119,65 @@ def test_cancelled_after_ship_profit_logic() -> None:
     )
     # cancelled_after_ship_profit = -logistics - order_process - ff_fee_total
     assert df["profit"].iloc[0] == pytest.approx(-600.0)
+
+
+def test_reference_fields_exist() -> None:
+    df = calc_oz_economics(
+        make_oz_orders(
+            quantity=2,
+            min_price_multiplier=1.7,
+            margin_price=3400.0,
+            price=3360.0,
+            category_fee_fact=330.0,
+            acquiring_fee_fact=170.0,
+            last_mile=80.0,
+            last_mile_fact=75.0,
+            order_process_delivery=120.0,
+            order_process_delivery_fact=115.0,
+        )
+    )
+
+    assert df["supplier_price_fact_total"].iloc[0] == pytest.approx(1800.0)
+    assert df["profit_fact"].iloc[0] == pytest.approx(df["profit"].iloc[0])
+    assert df["category_fee_fact"].iloc[0] == pytest.approx(330.0)
+    assert df["order_process_delivery_fact"].iloc[0] == pytest.approx(115.0)
+
+
+def test_show_all_columns_include_datalens_reference_fields() -> None:
+    expected = {
+        "category_fee_fact",
+        "acquiring_fee_fact",
+        "last_mile",
+        "last_mile_fact",
+        "order_process_delivery",
+        "order_process_delivery_fact",
+        "min_price_multiplier",
+        "margin_price",
+        "price",
+        "revenue_after_commission",
+        "profit_fact",
+        "cancel_penalty",
+        "late_shipment_penalty",
+        "late_recommend_penalty",
+    }
+
+    assert expected.issubset(_OZ_ALL_COLUMNS)
+
+
+def test_oz_query_includes_datalens_reference_fields() -> None:
+    sql, _ = build_oz_order_items_query()
+    sql_text = str(sql)
+
+    expected_aliases = {
+        "category_fee_fact",
+        "acquiring_fee_fact",
+        "last_mile_fact",
+        "order_process_delivery",
+        "order_process_delivery_fact",
+        "min_price_multiplier",
+        "margin_price",
+        "late_recommend_penalty",
+    }
+
+    for alias in expected_aliases:
+        assert f"AS {alias}" in sql_text

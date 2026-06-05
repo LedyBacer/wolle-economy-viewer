@@ -895,10 +895,24 @@ SELECT
     COALESCE(sp.supplier_price_fact, 0)::double precision AS supplier_price_fact,
     COALESCE(o.ff_fee, 50)::double precision AS ff_fee,
     COALESCE(o.socket_adapter_fee, 0)::double precision AS socket_adapter_fee,
+    COALESCE(o.min_price_multiplier, 0)::double precision AS min_price_multiplier,
     COALESCE(o.margin_price, o.price, 0)::double precision AS min_sell_price,
+    (COALESCE(o.margin_price, o.price, 0) * COALESCE(o.quantity, 1))::double precision AS margin_price,
+    (COALESCE(o.price, 0) * COALESCE(o.quantity, 1))::double precision AS price,
     (COALESCE(o.price, 0) * COALESCE(o.quantity, 1))::double precision AS sell_price_plan,
     (COALESCE(o.category_fee, 0) * COALESCE(o.quantity, 1))::double precision AS category_fee,
+    COALESCE(ta.category_fee_fact, 0)::double precision AS category_fee_fact,
     (COALESCE(o.acquiring_fee, 0) * COALESCE(o.quantity, 1))::double precision AS acquiring_fee_plan,
+    COALESCE(ta.acquiring_fee_fact, 0)::double precision AS acquiring_fee_fact,
+    (COALESCE(o.last_mile, 0) * COALESCE(o.quantity, 1))::double precision AS last_mile,
+    COALESCE(ta.last_mile_fact, 0)::double precision AS last_mile_fact,
+    (
+        (COALESCE(o.delivery_fee, 0) + COALESCE(o.order_process_fee, 0))
+        * COALESCE(o.quantity, 1)
+    )::double precision AS order_process_delivery,
+    (
+        COALESCE(ta.order_process_fact, 0) + COALESCE(ta.logistics_fact, 0)
+    )::double precision AS order_process_delivery_fact,
     (
         (COALESCE(o.delivery_fee, 0) + COALESCE(o.order_process_fee, 0) + COALESCE(o.last_mile, 0))
         * COALESCE(o.quantity, 1)

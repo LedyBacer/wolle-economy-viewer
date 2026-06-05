@@ -30,6 +30,7 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["base_price_total"] = out["base_price"] * q
 
     out["supplier_price_fact"] = _num(out.get("supplier_price_fact", pd.Series(0.0, index=out.index)))
+    out["supplier_price_fact_total"] = out["supplier_price_fact"] * q
     out["effective_purchase_total"] = np.where(
         out["supplier_price_fact"] > 0,
         out["supplier_price_fact"] * q,
@@ -45,10 +46,22 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
 
     out["min_sell_price"] = _num(out.get("min_sell_price", pd.Series(0.0, index=out.index)))
     out["min_sell_price_total"] = out["min_sell_price"] * q
+    out["min_price_multiplier"] = _num(out.get("min_price_multiplier", pd.Series(0.0, index=out.index)))
+    out["margin_price"] = _num(out.get("margin_price", out["min_sell_price_total"]))
     out["price_with_margin"] = out["min_sell_price_total"]
     out["our_margin"] = out["price_with_margin"] - out["base_price_total"]
 
     out["sell_price_plan"] = _num(out.get("sell_price_plan", pd.Series(0.0, index=out.index)))
+    out["price"] = _num(out.get("price", out["sell_price_plan"]))
+    for col in (
+        "category_fee_fact",
+        "acquiring_fee_fact",
+        "last_mile",
+        "last_mile_fact",
+        "order_process_delivery",
+        "order_process_delivery_fact",
+    ):
+        out[col] = _num(out.get(col, pd.Series(0.0, index=out.index)))
     out["calc_commissions"] = (
         _num(out.get("category_fee", pd.Series(0.0, index=out.index)))
         + _num(out.get("acquiring_fee_plan", pd.Series(0.0, index=out.index)))
@@ -158,6 +171,7 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
 
     out["profit_no_promo"] = base_profit
     out["profit"] = base_profit + out["promo_discounts"]
+    out["profit_fact"] = out["profit"]
     out["diff_from_min_price"] = out["sell_price"] - out["min_sell_price_total"]
     out["bonus_points"] = 0.0
 
