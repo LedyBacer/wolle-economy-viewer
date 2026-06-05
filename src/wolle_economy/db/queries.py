@@ -1072,8 +1072,10 @@ SELECT
     COALESCE(sp.supplier_price_fact, 0) AS supplier_price_fact,
     COALESCE(o.ff_fee, 50) AS ff_fee,
     COALESCE(o.socket_adapter_fee, 0) AS socket_adapter_fee,
+    o.final_price AS final_price,
     COALESCE(o.final_price, 0) AS min_sell_price,
     COALESCE(o.sale_price_ru, o.final_price) AS sell_price_plan,
+    o.min_price_multiplier AS min_price_multiplier,
     COALESCE(o.margin_percent, 0) AS margin_percent,
     COALESCE(o.category_fee, 0) AS category_fee,
     COALESCE(o.acquiring_fee, 0) AS acquiring_fee_plan,
@@ -1089,7 +1091,12 @@ SELECT
     ra.report_market_services AS report_market_services,
     ra.report_compensation AS report_compensation,
     COALESCE(ra.return_docs, 0) AS return_docs,
-    COALESCE(ra.report_rows, 0) AS report_rows
+    COALESCE(ra.report_rows, 0) AS report_rows,
+    CASE
+        WHEN fi.platform_seller_id = 11
+        THEN o.sale_price_ru / (CAST(o.converted_price AS DOUBLE PRECISION) / 100)
+        ELSE 1
+    END AS currency_rate
 FROM e_com.wb_orders o
 JOIN e_com.wb_feed_items fi ON fi.id = o.feed_item_id
 JOIN e_com.platform_sellers ps ON ps.id = o.seller_id

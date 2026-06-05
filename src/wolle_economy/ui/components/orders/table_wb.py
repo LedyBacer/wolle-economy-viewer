@@ -24,6 +24,43 @@ _WB_TECHNICAL_COLUMNS = {
 }
 
 _WB_MAIN_COLUMNS = [c for c in DISPLAY_COLUMNS if c not in _WB_TECHNICAL_COLUMNS]
+_WB_REFERENCE_COLUMNS = [
+    "created_at",
+    "order_id_str",
+    "order_status",
+    "offer_id",
+    "product_name",
+    "seller_name",
+    "supplier_name",
+    "shipment_date",
+    "base_price",
+    "supplier_price_fact",
+    "socket_adapter_fee",
+    "ff_fee",
+    "category_fee",
+    "report_commission",
+    "commission_fee_diff",
+    "acquiring_fee_plan",
+    "report_acquiring_fee",
+    "delivery_fee_plan",
+    "report_delivery_fee",
+    "delivery_fee_diff",
+    "min_price_multiplier",
+    "wb_profit_on_purchase_pct",
+    "final_price",
+    "sell_price_plan",
+    "report_sell_price",
+    "report_penalty",
+    "report_compensation",
+    "report_acceptance",
+    "report_storage_fee",
+    "income_after_fees",
+    "expected_profit",
+    "profit",
+    "profit_vs_expected",
+    "currency_rate",
+]
+_WB_ALL_COLUMNS = _WB_REFERENCE_COLUMNS + [c for c in DISPLAY_COLUMNS if c not in _WB_REFERENCE_COLUMNS]
 
 _MONEY_FMT = "%.2f ₽"
 _PCT_FMT = "%.1f %%"
@@ -38,21 +75,39 @@ for _col, _label in COLUMN_LABELS.items():
         "margin_fact_pct",
         "margin_plan_on_cost_pct",
         "margin_fact_on_cost_pct",
+        "wb_profit_on_purchase_pct",
     }:
         _WB_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_PCT_FMT)
+    elif _col in {"currency_rate", "min_price_multiplier"}:
+        _WB_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format="%.4f")
     elif _col in {
+        "base_price",
         "base_price_total",
+        "supplier_price_fact",
         "effective_purchase_total",
+        "ff_fee",
         "ff_fee_total",
+        "socket_adapter_fee",
         "socket_adapter_total",
         "price_with_margin",
         "our_margin",
+        "final_price",
         "min_sell_price_total",
+        "sell_price_plan",
+        "report_sell_price",
         "expected_profit",
         "sell_price",
         "bonus_points",
         "promo_discounts",
         "diff_from_min_price",
+        "category_fee",
+        "report_commission",
+        "commission_fee_diff",
+        "acquiring_fee_plan",
+        "report_acquiring_fee",
+        "delivery_fee_plan",
+        "report_delivery_fee",
+        "delivery_fee_diff",
         "calc_commissions",
         "market_services",
         "fact_commissions",
@@ -63,6 +118,10 @@ for _col, _label in COLUMN_LABELS.items():
         "profit_no_promo",
         "seller_cancel_penalty",
         "late_ship_penalty",
+        "report_penalty",
+        "report_compensation",
+        "report_acceptance",
+        "report_storage_fee",
         "payout_if_paid",
         "expected_payout",
         "actual_profit",
@@ -84,7 +143,7 @@ def _to_excel(df: pd.DataFrame) -> bytes:
 def show_wb_table(df: pd.DataFrame) -> None:
     show_all = st.toggle("Показать все колонки", value=False, key="wb_show_all_cols")
 
-    cols = [c for c in (DISPLAY_COLUMNS if show_all else _WB_MAIN_COLUMNS) if c in df.columns]
+    cols = [c for c in (_WB_ALL_COLUMNS if show_all else _WB_MAIN_COLUMNS) if c in df.columns]
     view = df[cols].rename(columns=COLUMN_LABELS)
 
     st.dataframe(view, width="stretch", hide_index=True, column_config=_WB_COLUMN_CONFIG)

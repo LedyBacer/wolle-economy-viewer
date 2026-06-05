@@ -61,6 +61,18 @@ def calc_wb_economics(df: pd.DataFrame) -> pd.DataFrame:
         + _num(out.get("acquiring_fee_plan", pd.Series(0.0, index=out.index)))
         + _num(out.get("delivery_fee_plan", pd.Series(0.0, index=out.index)))
     )
+    out["commission_fee_diff"] = np.where(
+        _num(out.get("report_commission", pd.Series(0.0, index=out.index))) != 0,
+        _num(out.get("category_fee", pd.Series(0.0, index=out.index)))
+        - _num(out.get("report_commission", pd.Series(0.0, index=out.index))),
+        0.0,
+    )
+    out["delivery_fee_diff"] = np.where(
+        _num(out.get("report_delivery_fee", pd.Series(0.0, index=out.index))) != 0,
+        _num(out.get("delivery_fee_plan", pd.Series(0.0, index=out.index)))
+        - _num(out.get("report_delivery_fee", pd.Series(0.0, index=out.index))),
+        0.0,
+    )
 
     out["expected_payout"] = (out["sell_price_plan"] - out["calc_commissions"]).clip(lower=0)
     expected_profit_raw = (
@@ -170,7 +182,7 @@ def calc_wb_economics(df: pd.DataFrame) -> pd.DataFrame:
         utc=True,
     )
     out["actual_profit"] = np.where(out["payment_status"] == "Переведён", out["profit"], 0.0)
-    out["profit_vs_expected"] = out["actual_profit"] - out["expected_profit"]
+    out["profit_vs_expected"] = np.where(out["profit"] != 0, out["profit"] - out["expected_profit"], 0.0)
 
     out["is_loss"] = out["profit"] < 0
     out["order_id_str"] = out["order_id"].astype(str)
@@ -184,6 +196,8 @@ def calc_wb_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["margin_fact_rub"] = out["profit"]
     out["margin_plan_on_cost_pct"] = (out["our_margin"] / bp * 100).round(2)
     out["margin_fact_on_cost_pct"] = (out["profit"] / bp * 100).round(2)
+    effective_purchase = pd.Series(out["effective_purchase_total"], index=out.index).replace(0, np.nan)
+    out["wb_profit_on_purchase_pct"] = (out["profit"] / effective_purchase * 100).round(2)
 
     created = pd.to_datetime(out["created_at"], errors="coerce", utc=True)
     shipped = pd.to_datetime(out.get("shipment_date"), errors="coerce", utc=True)
