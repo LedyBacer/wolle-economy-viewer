@@ -37,6 +37,8 @@ for _col, _label in MM_COLUMN_LABELS.items():
     elif _col in {
         "base_price_total",
         "effective_purchase_total",
+        "ff_fee_total",
+        "socket_adapter_total",
         "price_with_margin",
         "our_margin",
         "min_sell_price_total",

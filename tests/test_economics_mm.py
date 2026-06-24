@@ -3,10 +3,13 @@
 Все DataFrame синтетические — БД не используется.
 """
 
-import numpy as np
 import pandas as pd
 import pytest
 
+from wolle_economy.db.queries import (
+    build_mm_dbs_order_items_query,
+    build_mm_poizon_order_items_query,
+)
 from wolle_economy.domain.economics_mm import calc_mm_economics
 from wolle_economy.enums import (
     MM_FULFILLMENT_STATUS_CANCELLED,
@@ -14,6 +17,8 @@ from wolle_economy.enums import (
     MM_FULFILLMENT_STATUS_NOT_DELIVERED,
     MM_FULFILLMENT_STATUS_RETURNED,
 )
+from wolle_economy.ui.columns import MM_DISPLAY_COLUMNS
+from wolle_economy.ui.components.orders.table_mm import _MM_MAIN_COLUMNS
 
 # ---------------------------------------------------------------------------
 # Базовый шаблон строки MM-заказа
@@ -46,6 +51,8 @@ _MM_BASE_ROW: dict = {
     "cdek_delivery_cost": 0.0,
     "return_delivery_cost": 0.0,
     "supplier_price_fact": 0.0,
+    "ff_fee": 50.0,
+    "socket_adapter_fee": 0.0,
     "fr_net_payout": 0.0,
     "channel": "dbs",
 }
@@ -69,9 +76,9 @@ class TestMMDelivered:
         # sell_price = price(2000) + delivery(0) = 2000
         # incentive = price(2000) - final_price(1800) = 200, VAT 20% → 40
         # expected_payout = 2000 - 300 - 40 = 1660
-        # our_costs = base_price(1000) (supplier_price_fact=0 → fallback)
-        # profit = 1660 - 1000 = 660
-        assert df["profit"].iloc[0] == pytest.approx(660.0)
+        # our_costs = base_price(1000) + packaging(50)
+        # profit = 1660 - 1050 = 610
+        assert df["profit"].iloc[0] == pytest.approx(610.0)
 
     def test_expected_payout(self):
         df = calc_mm_economics(make_mm_orders())
@@ -80,17 +87,25 @@ class TestMMDelivered:
 
     def test_our_costs(self):
         df = calc_mm_economics(make_mm_orders())
-        assert df["our_costs"].iloc[0] == pytest.approx(1000.0)
+        assert df["our_costs"].iloc[0] == pytest.approx(1050.0)
+
+    def test_packaging_and_adapter_are_included(self):
+        df = calc_mm_economics(make_mm_orders(ff_fee=60.0, socket_adapter_fee=25.0))
+
+        assert df["ff_fee_total"].iloc[0] == pytest.approx(60.0)
+        assert df["socket_adapter_total"].iloc[0] == pytest.approx(25.0)
+        assert df["our_costs"].iloc[0] == pytest.approx(1085.0)
+        assert df["profit"].iloc[0] == pytest.approx(575.0)
 
     def test_is_delivered(self):
         df = calc_mm_economics(make_mm_orders())
-        assert df["is_delivered"].iloc[0] == True
-        assert df["is_cancelled_any"].iloc[0] == False
+        assert df["is_delivered"].iloc[0]
+        assert not df["is_cancelled_any"].iloc[0]
 
     def test_margin_pct(self):
         df = calc_mm_economics(make_mm_orders())
-        # margin_pct = profit(660) / sell_price(2000) * 100 = 33%
-        assert df["margin_pct"].iloc[0] == pytest.approx(33.0)
+        # margin_pct = profit(610) / sell_price(2000) * 100 = 30.5%
+        assert df["margin_pct"].iloc[0] == pytest.approx(30.5)
 
     def test_take_rate(self):
         df = calc_mm_economics(make_mm_orders())
@@ -128,8 +143,8 @@ class TestMMCancelled:
             fulfillment_status=MM_FULFILLMENT_STATUS_CANCELLED,
             cdek_status="CANCELLED",
         ))
-        assert df["is_cancelled_before"].iloc[0] == True
-        assert df["is_delivered"].iloc[0] == False
+        assert df["is_cancelled_before"].iloc[0]
+        assert not df["is_delivered"].iloc[0]
 
 
 class TestMMNotDelivered:
@@ -144,18 +159,17 @@ class TestMMNotDelivered:
             return_delivery_cost=350.0,
             delivered_at=None,
         ))
-        # sell_price = 0 (not delivered), our_costs = return_delivery_cost = 350
-        # profit = 0 - 350 = -350
-        assert df["profit"].iloc[0] == pytest.approx(-350.0)
-        assert df["our_costs"].iloc[0] == pytest.approx(350.0)
+        # sell_price = 0, our_costs = return_delivery_cost(350) + packaging(50)
+        assert df["profit"].iloc[0] == pytest.approx(-400.0)
+        assert df["our_costs"].iloc[0] == pytest.approx(400.0)
 
     def test_flags(self):
         df = calc_mm_economics(make_mm_orders(
             fulfillment_status=MM_FULFILLMENT_STATUS_NOT_DELIVERED,
             cdek_status="NOT_DELIVERED",
         ))
-        assert df["is_returned"].iloc[0] == True
-        assert df["is_delivered"].iloc[0] == False
+        assert df["is_returned"].iloc[0]
+        assert not df["is_delivered"].iloc[0]
 
 
 class TestMMReturned:
@@ -169,9 +183,8 @@ class TestMMReturned:
             return_delivery_cost=400.0,
             delivered_at=None,
         ))
-        # sell_price = 0 (not delivered), our_costs = return_delivery_cost = 400
-        # profit = 0 - 400 = -400
-        assert df["profit"].iloc[0] == pytest.approx(-400.0)
+        # sell_price = 0, our_costs = return_delivery_cost(400) + packaging(50)
+        assert df["profit"].iloc[0] == pytest.approx(-450.0)
 
 
 class TestMMSupplierPriceFact:
@@ -181,14 +194,14 @@ class TestMMSupplierPriceFact:
         df = calc_mm_economics(make_mm_orders(supplier_price_fact=800.0))
         # effective_purchase = 800 (not 1000)
         assert df["effective_purchase_total"].iloc[0] == pytest.approx(800.0)
-        assert df["uses_fact_purchase_price"].iloc[0] == True
-        # profit = expected_payout(1660) - our_costs(800) = 860
-        assert df["profit"].iloc[0] == pytest.approx(860.0)
+        assert df["uses_fact_purchase_price"].iloc[0]
+        # profit = expected_payout(1660) - purchase(800) - packaging(50) = 810
+        assert df["profit"].iloc[0] == pytest.approx(810.0)
 
     def test_fact_price_zero_fallback(self):
         df = calc_mm_economics(make_mm_orders(supplier_price_fact=0.0))
         assert df["effective_purchase_total"].iloc[0] == pytest.approx(1000.0)
-        assert df["uses_fact_purchase_price"].iloc[0] == False
+        assert not df["uses_fact_purchase_price"].iloc[0]
 
 
 class TestMMPromo:
@@ -196,10 +209,10 @@ class TestMMPromo:
 
     def test_promo_reduces_profit(self):
         df = calc_mm_economics(make_mm_orders(promo_discounts=-150.0))
-        # profit = expected_payout(1660) + promo(-150) - our_costs(1000) = 510
-        assert df["profit"].iloc[0] == pytest.approx(510.0)
-        # profit_no_promo = 1660 - 1000 = 660
-        assert df["profit_no_promo"].iloc[0] == pytest.approx(660.0)
+        # profit = expected_payout(1660) + promo(-150) - our_costs(1050) = 460
+        assert df["profit"].iloc[0] == pytest.approx(460.0)
+        # profit_no_promo = 1660 - 1050 = 610
+        assert df["profit_no_promo"].iloc[0] == pytest.approx(610.0)
 
 
 class TestMMQuantity:
@@ -211,8 +224,8 @@ class TestMMQuantity:
         assert df["base_price_total"].iloc[0] == pytest.approx(2000.0)
         # effective_purchase_total = 2000 (fallback)
         assert df["effective_purchase_total"].iloc[0] == pytest.approx(2000.0)
-        # our_costs = 2000
-        assert df["our_costs"].iloc[0] == pytest.approx(2000.0)
+        # our_costs = purchase(2000) + packaging(50 × 2)
+        assert df["our_costs"].iloc[0] == pytest.approx(2100.0)
 
     def test_quantity_2_with_fact_price(self):
         df = calc_mm_economics(make_mm_orders(quantity=2, supplier_price_fact=800.0))
@@ -229,8 +242,8 @@ class TestMMPoizon:
             supplier_price_fact=0.0,
         ))
         assert df["channel"].iloc[0] == "poizon"
-        # profit = expected_payout(1660) - our_costs(1000) = 660
-        assert df["profit"].iloc[0] == pytest.approx(660.0)
+        # profit = expected_payout(1660) - purchase(1000) - packaging(50) = 610
+        assert df["profit"].iloc[0] == pytest.approx(610.0)
 
 
 class TestMMEmpty:
@@ -249,3 +262,21 @@ class TestMMYaOrderIdAlias:
         df = calc_mm_economics(make_mm_orders())
         assert "ya_order_id" in df.columns
         assert df["ya_order_id"].iloc[0] == df["mm_order_id"].iloc[0]
+
+
+@pytest.mark.parametrize(
+    "query_builder",
+    [build_mm_dbs_order_items_query, build_mm_poizon_order_items_query],
+)
+def test_mm_queries_load_packaging_and_adapter(query_builder) -> None:
+    sql, _ = query_builder()
+    query = str(sql)
+
+    assert "COALESCE(i.markup_ff_fees_amount, 50) AS ff_fee" in query
+    assert "COALESCE(i.markup_socket_adapter_fee_amount, 0) AS socket_adapter_fee" in query
+
+
+def test_packaging_and_adapter_are_in_default_table_and_export() -> None:
+    for column in ("ff_fee_total", "socket_adapter_total"):
+        assert column in MM_DISPLAY_COLUMNS
+        assert column in _MM_MAIN_COLUMNS

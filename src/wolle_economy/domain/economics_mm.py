@@ -9,8 +9,8 @@
 - incentive_amount  = price − final_price (часть, оплаченная бонусами покупателя)
 - vat_on_incentive  = incentive_amount × ставка НДС (по дате выплаты отчёта)
                       до 01.01.2026 → 20%, 01.01.2026–01.04.2026 → 22%, после → 0%
-- our_costs         = effective_purchase_total + cdek_delivery_cost (для доставленных)
-                      или return_delivery_cost (для возвратов)
+- our_costs         = закупка + упаковка + переходник + доставка (для доставленных)
+                      или упаковка + return_delivery_cost (для возвратов)
 - profit            = expected_payout + promo_discounts − our_costs
 - profit_no_promo   = expected_payout − our_costs
 
@@ -72,6 +72,21 @@ def calc_mm_economics(df: pd.DataFrame) -> pd.DataFrame:
     df["supplier_price_fact"] = spf
     df["effective_purchase_total"] = np.where(spf > 0, spf * q, df["base_price_total"])
     df["uses_fact_purchase_price"] = spf > 0
+
+    # Упаковка и переходник хранятся за единицу. Для исторических строк без
+    # сохранённого тарифа упаковки используем стандартные 50 ₽, как в других МП.
+    ff_fee = pd.to_numeric(
+        df.get("ff_fee", pd.Series(50.0, index=df.index)),
+        errors="coerce",
+    ).fillna(50.0)
+    socket_adapter_fee = pd.to_numeric(
+        df.get("socket_adapter_fee", pd.Series(0.0, index=df.index)),
+        errors="coerce",
+    ).fillna(0.0)
+    df["ff_fee"] = ff_fee
+    df["socket_adapter_fee"] = socket_adapter_fee
+    df["ff_fee_total"] = ff_fee * q
+    df["socket_adapter_total"] = socket_adapter_fee * q
 
     # margin_pct_raw — плановый % наценки Wolle (из min_allowed_price в БД).
     # price_with_margin = закупка + наценка Wolle (без комиссий ММ и доставки).
@@ -136,16 +151,22 @@ def calc_mm_economics(df: pd.DataFrame) -> pd.DataFrame:
         errors="coerce",
     ).fillna(0)
 
-    # Доставленные: закупка + фактическая доставка СДЭК.
-    # Возвраты/невыкупы: товар вернулся → закупка не потеряна, но есть расходы на возврат.
+    # Доставленные: закупка + упаковка + переходник + фактическая доставка СДЭК.
+    # Возвраты/невыкупы: товар вернулся → закупка не потеряна, но упаковка уже
+    # использована и есть расходы на возврат. Переходник возвращается с товаром.
     # Отменённые до отгрузки: затрат нет.
     df["our_costs"] = np.where(
         df["is_cancelled_before"],
         0.0,
         np.where(
             df["is_returned"],
-            return_cost,
-            df["effective_purchase_total"] + cdek_cost,
+            return_cost + df["ff_fee_total"],
+            (
+                df["effective_purchase_total"]
+                + df["ff_fee_total"]
+                + df["socket_adapter_total"]
+                + cdek_cost
+            ),
         ),
     )
 

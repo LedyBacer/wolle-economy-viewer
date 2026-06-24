@@ -547,6 +547,8 @@ SELECT
     i.min_allowed_price           AS margin_pct_raw,    -- ошибочное название в БД: на самом деле % маржи
     i.margin_percent              AS min_sell_price,     -- ошибочное название в БД: на самом деле мин. допустимая цена
     i.modifier_price              AS modifier_price,     -- цена с учётом маржи + комиссий + доставки
+    COALESCE(i.markup_ff_fees_amount, 50) AS ff_fee,
+    COALESCE(i.markup_socket_adapter_fee_amount, 0) AS socket_adapter_fee,
 
     -- Доставка
     o.delivery_cost               AS delivery_cost,      -- стоимость доставки, снятая с покупателя
@@ -660,6 +662,8 @@ SELECT
     i.min_allowed_price           AS margin_pct_raw,    -- ошибочное название в БД: на самом деле % маржи
     i.margin_percent              AS min_sell_price,     -- ошибочное название в БД: на самом деле мин. допустимая цена
     i.modifier_price              AS modifier_price,     -- цена с учётом маржи + комиссий + доставки
+    COALESCE(i.markup_ff_fees_amount, 50) AS ff_fee,
+    COALESCE(i.markup_socket_adapter_fee_amount, 0) AS socket_adapter_fee,
 
     -- Доставка
     o.delivery_cost               AS delivery_cost,      -- стоимость доставки, снятая с покупателя
