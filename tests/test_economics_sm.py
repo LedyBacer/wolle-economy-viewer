@@ -3,8 +3,15 @@
 import pandas as pd
 import pytest
 
+from wolle_economy.db.queries import (
+    build_mm_dbs_order_items_query,
+    build_mm_poizon_order_items_query,
+    build_oz_order_items_query,
+    build_sm_order_items_query,
+    build_supplier_price_fact_query,
+    build_wb_order_items_query,
+)
 from wolle_economy.domain.economics_sm import calc_sm_economics
-from wolle_economy.db.queries import build_sm_order_items_query
 from wolle_economy.ui.components.orders.table_sm import _SM_ALL_COLUMNS
 
 _SM_BASE_ROW: dict = {
@@ -71,8 +78,53 @@ def test_payment_status_and_actual_profit_paid() -> None:
 
 def test_payment_status_and_actual_profit_unpaid() -> None:
     df = calc_sm_economics(make_sm_orders(date_realization=None, profit=777.0))
-    assert pd.isna(df["payment_status"].iloc[0])
+    assert df["payment_status"].iloc[0] == "Не переведён (отчёт загружен)"
     assert df["actual_profit"].iloc[0] == pytest.approx(0.0)
+
+
+def test_missing_report_is_not_shown_as_zero_or_plan_sell_price() -> None:
+    df = calc_sm_economics(
+        make_sm_orders(
+            date_realization=None,
+            has_price_report=False,
+            seller_price_unit=None,
+            sell_price=None,
+            profit=0.0,
+        )
+    )
+
+    assert df["payment_status"].iloc[0] == "Отчёт не загружен"
+    assert pd.isna(df["sell_price"].iloc[0])
+    assert pd.isna(df["profit"].iloc[0])
+    assert pd.isna(df["actual_profit"].iloc[0])
+    assert pd.isna(df["margin_fact_rub"].iloc[0])
+
+
+def test_sm_query_keeps_report_price_precision() -> None:
+    sql, _ = build_sm_order_items_query()
+    query = str(sql)
+
+    assert "t2.seller_price * t1.quantity AS sell_price" in query
+    assert "FLOOR(t2.seller_price)" not in query
+
+
+@pytest.mark.parametrize(
+    "query_builder",
+    [
+        build_supplier_price_fact_query,
+        build_mm_dbs_order_items_query,
+        build_mm_poizon_order_items_query,
+        build_oz_order_items_query,
+        build_wb_order_items_query,
+        build_sm_order_items_query,
+    ],
+)
+def test_all_flows_reject_native_currency_in_ru_custom_price(query_builder) -> None:
+    sql, _ = query_builder()
+    query = str(sql)
+
+    assert "ots.currency NOT IN ('RUB', 'RUR')" in query
+    assert "ots.ru_custom_price = ots.custom_price" in query
 
 
 def test_cancelled_and_returned_flags() -> None:

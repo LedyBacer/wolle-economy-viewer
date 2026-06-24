@@ -73,7 +73,7 @@ _SM_COLUMN_LABELS = {
     "min_price_multiplier": "Коэф. мин. цены",
     "sm_profit_on_purchase_pct": "Прибыль факт % от закупки",
     "margin_price": "Минимальная цена за шт.",
-    "margin_price_total": "Минимальная цена",
+    "margin_price_total": "Минимальная цена SM",
     "seller_price_unit": "Цена продажи за шт.",
     "profit_unit": "Прибыль за шт.",
     "total": "Итого по отчёту SM",

@@ -51,35 +51,58 @@ def calc_sm_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["min_sell_price_total"] = out["margin_price_total"]
 
     raw_sell = _num(out.get("sell_price", pd.Series(np.nan, index=out.index)), default=np.nan)
-    out["sell_price"] = raw_sell.where(raw_sell.notna(), out["margin_price_total"])
-    out["sell_price"] = _num(out["sell_price"])
+    has_price_report = out.get(
+        "has_price_report",
+        raw_sell.notna(),
+    )
+    has_price_report = pd.Series(has_price_report, index=out.index).fillna(False).astype(bool)
+    out["has_price_report"] = has_price_report
+
+    # Фактическую цену нельзя подменять плановой margin_price: при отсутствующем
+    # отчёте это создавало правдоподобное, но неверное значение.
+    out["sell_price"] = raw_sell.where(has_price_report)
 
     out["expected_payout"] = _num(out.get("expected_payout", pd.Series(0.0, index=out.index)))
     out["payout_if_paid"] = _num(out.get("payout_if_paid", pd.Series(0.0, index=out.index)))
-    out["market_services"] = out["sell_price"] - out["expected_payout"]
+    out["market_services"] = (out["sell_price"] - out["payout_if_paid"]).where(has_price_report)
 
     out["expected_profit"] = _num(out.get("expected_profit", pd.Series(0.0, index=out.index)))
-    out["profit"] = _num(out.get("profit", pd.Series(0.0, index=out.index)))
+    report_profit = _num(
+        out.get("profit", pd.Series(np.nan, index=out.index)),
+        default=np.nan,
+    )
+    out["profit"] = report_profit.where(has_price_report)
 
     if "promo_discounts" not in out.columns:
         out["promo_discounts"] = 0.0
     out["promo_discounts"] = _num(out["promo_discounts"])
-    out["income_after_fees"] = out["expected_payout"]
-    out["income_after_fees_promo"] = out["expected_payout"] + out["promo_discounts"]
-    out["profit_no_promo"] = out["expected_payout"] - out["our_costs"] if "our_costs" in out.columns else 0.0
+    out["income_after_fees"] = out["payout_if_paid"].where(has_price_report)
+    out["income_after_fees_promo"] = out["income_after_fees"] + out["promo_discounts"]
 
     out["delivery_fee"] = _num(out.get("delivery_fee", pd.Series(0.0, index=out.index)))
     out["our_costs"] = (
         out["effective_purchase_total"] + out["ff_fee_total"] + out["socket_adapter_total"] + out["delivery_fee"]
     )
-    out["profit_no_promo"] = out["expected_payout"] - out["our_costs"]
+    out["profit_no_promo"] = (out["income_after_fees"] - out["our_costs"]).where(has_price_report)
 
-    diff = _num(out.get("diff_from_min_price", pd.Series(0.0, index=out.index)))
+    diff = _num(
+        out.get("diff_from_min_price", pd.Series(np.nan, index=out.index)),
+        default=np.nan,
+    )
     out["diff_from_min_price"] = diff * q
 
-    out["payment_status"] = np.where(out["date_realization"].notna(), "Переведён", None)
+    is_paid = out["date_realization"].notna()
+    out["payment_status"] = np.select(
+        [is_paid, has_price_report],
+        ["Переведён", "Не переведён (отчёт загружен)"],
+        default="Отчёт не загружен",
+    )
     out["last_payment_date"] = pd.to_datetime(out["date_realization"], errors="coerce", utc=True)
-    out["actual_profit"] = np.where(out["payment_status"] == "Переведён", out["profit"], 0.0)
+    out["actual_profit"] = np.where(
+        is_paid,
+        out["profit"],
+        np.where(has_price_report, 0.0, np.nan),
+    )
     out["profit_vs_expected"] = out["actual_profit"] - out["expected_profit"]
 
     out["bonus_points"] = 0.0

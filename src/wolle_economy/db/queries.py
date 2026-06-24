@@ -384,7 +384,15 @@ source_order_mapping AS (
 -- что порождает несколько строк в source_order_mapping. Берём одну — цена одинакова.
 SELECT DISTINCT ON (yai.id)
     yai.id AS item_id,
-    COALESCE(ots.ru_custom_price, ots.ru_price, 0) AS supplier_price_fact
+    CASE
+        -- Дефект исторических данных: для части валютных заказов ru_custom_price
+        -- содержит custom_price в исходной валюте. В таком случае используем
+        -- корректно пересчитанный ru_price.
+        WHEN ots.currency NOT IN ('RUB', 'RUR')
+         AND ots.ru_custom_price = ots.custom_price
+        THEN COALESCE(ots.ru_price, 0)
+        ELSE COALESCE(ots.ru_custom_price, ots.ru_price, 0)
+    END AS supplier_price_fact
 FROM e_com.ya_order_items yai
 JOIN e_com.ya_orders o ON yai.order_id = o.id
 LEFT JOIN source_order_mapping som ON yai.id = som.ya_order_item_id
@@ -498,7 +506,12 @@ _MM_FR_AGG = """
 _MM_SPF = """
     SELECT DISTINCT ON (aso.mm_dbs_order_item_id)
         aso.mm_dbs_order_item_id,
-        COALESCE(ots.ru_custom_price, ots.ru_price, 0) AS supplier_price_fact,
+        CASE
+            WHEN ots.currency NOT IN ('RUB', 'RUR')
+             AND ots.ru_custom_price = ots.custom_price
+            THEN COALESCE(ots.ru_price, 0)
+            ELSE COALESCE(ots.ru_custom_price, ots.ru_price, 0)
+        END                                             AS supplier_price_fact,
         ots.supplier_name                               AS supplier_name
     FROM e_com.all_split_orders aso
     LEFT JOIN e_com.order_to_supplier ots ON ots.id = aso.order_to_supplier_id
@@ -828,7 +841,12 @@ source_order_mapping AS (
 supplier_prices AS (
     SELECT DISTINCT ON (oz.id)
         oz.id AS oz_order_id,
-        COALESCE(ots.ru_custom_price, ots.ru_price, 0) AS supplier_price_fact,
+        CASE
+            WHEN ots.currency NOT IN ('RUB', 'RUR')
+             AND ots.ru_custom_price = ots.custom_price
+            THEN COALESCE(ots.ru_price, 0)
+            ELSE COALESCE(ots.ru_custom_price, ots.ru_price, 0)
+        END AS supplier_price_fact,
         ots.supplier_name AS supplier_name
     FROM e_com.ozon_orders oz
     LEFT JOIN source_order_mapping som ON oz.id = som.oz_order_id
@@ -1026,7 +1044,12 @@ source_order_mapping AS (
 supplier_prices AS (
     SELECT
         wb.id AS wb_order_id,
-        COALESCE(ots.ru_custom_price, ots.ru_price, 0) AS supplier_price_fact,
+        CASE
+            WHEN ots.currency NOT IN ('RUB', 'RUR')
+             AND ots.ru_custom_price = ots.custom_price
+            THEN COALESCE(ots.ru_price, 0)
+            ELSE COALESCE(ots.ru_custom_price, ots.ru_price, 0)
+        END AS supplier_price_fact,
         ots.supplier_name AS supplier_name
     FROM e_com.wb_orders wb
     LEFT JOIN source_order_mapping som ON wb.id = som.wb_order_id
@@ -1258,6 +1281,7 @@ SELECT
     'RU' AS seller_location,
     t1.supplier_name AS supplier_name,
     t4.shipment_date AS shipment_date,
+    (t2.id IS NOT NULL) AS has_price_report,
 
     -- Плановая/фактическая закупка (за единицу)
     t1.supplier_price AS base_price,
@@ -1278,9 +1302,9 @@ SELECT
     t1.min_price_multiplier AS min_price_multiplier,
     t1.margin_price AS margin_price,
     t1.margin_price * t1.quantity AS margin_price_total,
-    CAST(FLOOR(t2.seller_price) AS BIGINT) AS seller_price_unit,
-    CAST(FLOOR(t2.seller_price) AS BIGINT) * t1.quantity AS sell_price,
-    CAST(FLOOR(t2.seller_price) AS BIGINT) - t1.margin_price AS diff_from_min_price,
+    t2.seller_price AS seller_price_unit,
+    t2.seller_price * t1.quantity AS sell_price,
+    t2.seller_price - t1.margin_price AS diff_from_min_price,
 
     -- Расчётная/фактическая прибыль и выплаты из исходного отчёта
     (((((t1.margin_price - t1.delivery_fee) - t1.category_fee) - t1.ff_fee) - t1.adapter_fee) - t1.supplier_price)
@@ -1400,7 +1424,12 @@ JOIN (
     )
     SELECT
         sm.id AS sm_order_id,
-        COALESCE(ots.ru_custom_price, ots.ru_price, 0) AS supplier_price
+        CASE
+            WHEN ots.currency NOT IN ('RUB', 'RUR')
+             AND ots.ru_custom_price = ots.custom_price
+            THEN COALESCE(ots.ru_price, 0)
+            ELSE COALESCE(ots.ru_custom_price, ots.ru_price, 0)
+        END AS supplier_price
     FROM e_com.sm_orders sm
     LEFT JOIN source_order_mapping som ON sm.id = som.sm_order_id
     LEFT JOIN e_com.all_split_orders aso_source ON som.source_all_split_orders_id = aso_source.id
