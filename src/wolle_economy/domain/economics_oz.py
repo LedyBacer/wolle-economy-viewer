@@ -68,8 +68,9 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
         + _num(out.get("delivery_fee_plan", pd.Series(0.0, index=out.index)))
     )
 
-    out["expected_payout"] = out["sell_price_plan"] - out["calc_commissions"]
-    out["expected_profit"] = out["expected_payout"] - (
+    planned_payout = out["sell_price_plan"] - out["calc_commissions"]
+    out["expected_payout"] = planned_payout
+    out["expected_profit"] = planned_payout - (
         out["base_price_total"] + out["ff_fee_total"] + out["socket_adapter_total"]
     )
 
@@ -107,6 +108,10 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
         out["revenue_after_commission"],
         0.0,
     )
+    has_actual_payout = (report_rows > 0) & (
+        is_delivered_no_refund | is_partial_return | is_full_return
+    )
+    out["expected_payout"] = np.where(has_actual_payout, out["income_after_fees"], planned_payout)
 
     if "promo_discounts" not in out.columns:
         out["promo_discounts"] = 0.0
@@ -176,7 +181,7 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["bonus_points"] = 0.0
 
     out["payment_status"] = np.where(
-        (report_rows > 0) & (is_delivered_no_refund | is_partial_return | is_full_return),
+        has_actual_payout,
         "Переведён",
         None,
     )

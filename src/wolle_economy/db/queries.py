@@ -790,6 +790,7 @@ ozon_transactions_agg AS (
             END) AS last_mile_fact,
         SUM(CASE WHEN service_name_ru ILIKE '%%Обработка отправления Drop-off%%' THEN -price ELSE 0 END) AS order_process_fact,
         SUM(CASE WHEN service_name_ru ILIKE '%%логистика%%' THEN -price ELSE 0 END) AS logistics_fact,
+        SUM(CASE WHEN price < 0 THEN -price ELSE 0 END) AS total_charges_fact,
         CASE
             WHEN SUM(CASE WHEN service_name = 'Revenue' THEN 1 ELSE 0 END) > 0
             THEN SUM(price)
@@ -806,7 +807,7 @@ ozon_transactions_agg AS (
                 ELSE 0
             END) AS late_shipment_penalty,
         SUM(CASE
-                WHEN operation_type_name ILIKE '%%Обработка операционных ошибок продавца: отгрузка в нерекомендованный слот%%'
+                WHEN operation_type_name ILIKE '%%нерекомендованный слот%%'
                 THEN -price
                 ELSE 0
             END) AS late_recommend_penalty,
@@ -943,11 +944,7 @@ SELECT
         COALESCE(o.price, 0) * GREATEST(COALESCE(o.quantity, 1) - COALESCE(r.quantity, 0), 0)
     )::double precision AS report_sell_price,
     (
-        COALESCE(ta.category_fee_fact, 0)
-        + COALESCE(ta.acquiring_fee_fact, 0)
-        + COALESCE(ta.last_mile_fact, 0)
-        + COALESCE(ta.order_process_fact, 0)
-        + COALESCE(ta.logistics_fact, 0)
+        COALESCE(ta.total_charges_fact, 0)
     )::double precision AS report_market_services,
     COALESCE(ta.revenue_after_commission, 0)::double precision AS revenue_after_commission,
     COALESCE(ta.order_process_fact, 0)::double precision AS order_process_fact,

@@ -64,6 +64,7 @@ def test_delivered_profit_and_payout() -> None:
     # our_costs = 900 + 50 + 20 = 970
     # profit = 410
     assert df["income_after_fees"].iloc[0] == pytest.approx(1380.0)
+    assert df["expected_payout"].iloc[0] == pytest.approx(1380.0)
     assert df["our_costs"].iloc[0] == pytest.approx(970.0)
     assert df["profit"].iloc[0] == pytest.approx(410.0)
     assert df["payment_status"].iloc[0] == "Переведён"
@@ -187,3 +188,11 @@ def test_oz_query_includes_datalens_reference_fields() -> None:
 
     for alias in expected_aliases:
         assert f"AS {alias}" in sql_text
+
+
+def test_oz_query_uses_all_negative_report_rows_for_market_services() -> None:
+    sql, _ = build_oz_order_items_query()
+    sql_text = str(sql)
+
+    assert "SUM(CASE WHEN price < 0 THEN -price ELSE 0 END) AS total_charges_fact" in sql_text
+    assert "COALESCE(ta.total_charges_fact, 0)" in sql_text
