@@ -74,7 +74,8 @@ def calc_wb_economics(df: pd.DataFrame) -> pd.DataFrame:
         0.0,
     )
 
-    out["expected_payout"] = (out["sell_price_plan"] - out["calc_commissions"]).clip(lower=0)
+    planned_payout = (out["sell_price_plan"] - out["calc_commissions"]).clip(lower=0)
+    out["expected_payout"] = planned_payout
     expected_profit_raw = (
         sell_price_plan_raw
         - out["socket_adapter_total"]
@@ -113,6 +114,7 @@ def calc_wb_economics(df: pd.DataFrame) -> pd.DataFrame:
 
     report_income = report_income_raw.fillna(0.0)
     out["income_after_fees"] = np.where(report_rows > 0, report_income, 0.0)
+    out["expected_payout"] = np.where(report_rows > 0, out["income_after_fees"], planned_payout)
     out["market_services"] = np.where(
         report_rows > 0,
         out["sell_price"] - out["income_after_fees"],
@@ -176,8 +178,9 @@ def calc_wb_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["late_ship_penalty"] = 0.0
     out["payment_status"] = np.where(report_rows > 0, "Переведён", None)
     out["payout_if_paid"] = np.where(out["payment_status"] == "Переведён", out["income_after_fees"], 0.0)
+    payment_date = out.get("report_payment_date", out.get("created_at"))
     out["last_payment_date"] = pd.to_datetime(
-        np.where(out["payment_status"] == "Переведён", out.get("created_at"), pd.NaT),
+        np.where(out["payment_status"] == "Переведён", payment_date, pd.NaT),
         errors="coerce",
         utc=True,
     )

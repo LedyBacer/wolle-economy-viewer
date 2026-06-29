@@ -1014,6 +1014,17 @@ WHERE ps.platform_for_sell_id = 2
 
 _WB_ORDER_ITEMS_SELECT = """
 WITH
+wb_report_rate AS (
+    SELECT
+        o.id AS wb_order_id,
+        CASE
+            WHEN fi.platform_seller_id = 11
+            THEN o.sale_price_ru / NULLIF(CAST(o.converted_price AS DOUBLE PRECISION) / 100, 0)
+            ELSE 1
+        END AS currency_rate
+    FROM e_com.wb_orders o
+    JOIN e_com.wb_feed_items fi ON fi.id = o.feed_item_id
+),
 latest_stock_movement AS (
     SELECT DISTINCT ON (smt.all_split_orders_id)
         smt.all_split_orders_id,
@@ -1127,17 +1138,25 @@ SELECT
     ra.report_acceptance AS report_acceptance,
     ra.report_storage_fee AS report_storage_fee,
     ra.report_market_services AS report_market_services,
+    ra.report_sell_price_cny AS report_sell_price_cny,
+    ra.report_commission_cny AS report_commission_cny,
+    ra.report_acquiring_fee_cny AS report_acquiring_fee_cny,
+    ra.report_delivery_fee_cny AS report_delivery_fee_cny,
+    ra.report_penalty_cny AS report_penalty_cny,
+    ra.report_acceptance_cny AS report_acceptance_cny,
+    ra.report_storage_fee_cny AS report_storage_fee_cny,
+    ra.report_market_services_cny AS report_market_services_cny,
+    ra.report_payout_cny AS report_payout_cny,
+    ra.report_currency AS report_currency,
+    ra.report_payment_date AS report_payment_date,
     ra.report_compensation AS report_compensation,
     COALESCE(ra.return_docs, 0) AS return_docs,
     COALESCE(ra.report_rows, 0) AS report_rows,
-    CASE
-        WHEN fi.platform_seller_id = 11
-        THEN o.sale_price_ru / (CAST(o.converted_price AS DOUBLE PRECISION) / 100)
-        ELSE 1
-    END AS currency_rate
+    rr.currency_rate AS currency_rate
 FROM e_com.wb_orders o
 JOIN e_com.wb_feed_items fi ON fi.id = o.feed_item_id
 JOIN e_com.platform_sellers ps ON ps.id = o.seller_id
+JOIN wb_report_rate rr ON rr.wb_order_id = o.id
 LEFT JOIN supplier_prices sp ON sp.wb_order_id = o.id
 LEFT JOIN LATERAL (
     SELECT
@@ -1145,11 +1164,7 @@ LEFT JOIN LATERAL (
             CASE r.doc_type_name
                 WHEN 'Продажа' THEN r.retail_price
                 WHEN 'Возврат' THEN -r.retail_price
-                WHEN '销售' THEN r.retail_price * CASE
-                    WHEN fi.platform_seller_id = 11
-                    THEN o.sale_price_ru / (CAST(o.converted_price AS DOUBLE PRECISION) / 100)
-                    ELSE 1
-                END
+                WHEN '销售' THEN r.retail_price * rr.currency_rate
                 ELSE 0
             END
         ) AS report_sell_price,
@@ -1158,33 +1173,32 @@ LEFT JOIN LATERAL (
             CASE r.doc_type_name
                 WHEN 'Продажа' THEN (r.retail_price * r.commission_percent) / 100
                 WHEN 'Возврат' THEN ((-r.retail_price) * r.commission_percent) / 100
-                WHEN '销售' THEN (r.retail_price * CASE
-                    WHEN fi.platform_seller_id = 11
-                    THEN o.sale_price_ru / (CAST(o.converted_price AS DOUBLE PRECISION) / 100)
-                    ELSE 1
-                END * r.commission_percent) / 100
+                WHEN '销售' THEN (r.retail_price * rr.currency_rate * r.commission_percent) / 100
                 ELSE 0
             END
         ) AS report_commission,
-        SUM(r.acquiring_fee) AS report_acquiring_fee,
         SUM(
             CASE
-                WHEN r.currency_name = 'cny'
-                THEN r.delivery_rub * CASE
-                    WHEN fi.platform_seller_id = 11
-                    THEN o.sale_price_ru / (CAST(o.converted_price AS DOUBLE PRECISION) / 100)
-                    ELSE 1
-                END
+                WHEN r.currency_name = 'cny' THEN r.acquiring_fee * rr.currency_rate
+                ELSE r.acquiring_fee
+            END
+        ) AS report_acquiring_fee,
+        SUM(
+            CASE
+                WHEN r.currency_name = 'cny' THEN r.delivery_rub * rr.currency_rate
                 ELSE r.delivery_rub
             END
         ) AS report_delivery_fee,
-        SUM(r.penalty) AS report_penalty,
-        SUM(r.acceptance) AS report_acceptance,
-        SUM(r.storage_fee) AS report_storage_fee,
+        SUM(CASE WHEN r.currency_name = 'cny' THEN r.penalty * rr.currency_rate ELSE r.penalty END) AS report_penalty,
+        SUM(CASE WHEN r.currency_name = 'cny' THEN r.acceptance * rr.currency_rate ELSE r.acceptance END) AS report_acceptance,
+        SUM(CASE WHEN r.currency_name = 'cny' THEN r.storage_fee * rr.currency_rate ELSE r.storage_fee END) AS report_storage_fee,
         SUM(
             CASE
                 WHEN r.supplier_oper_name LIKE 'Возмещение издержек по перевозке/по складским операциям с товаром'
-                THEN r.ppvz_vw + r.ppvz_vw_nds + r.rebill_logistic_cost
+                THEN (r.ppvz_vw + r.ppvz_vw_nds + r.rebill_logistic_cost) * CASE
+                    WHEN r.currency_name = 'cny' THEN rr.currency_rate
+                    ELSE 1
+                END
                 ELSE 0
             END
         ) AS report_compensation,
@@ -1194,29 +1208,80 @@ LEFT JOIN LATERAL (
             CASE r.doc_type_name
                 WHEN 'Продажа' THEN (r.retail_price * r.commission_percent) / 100
                 WHEN 'Возврат' THEN ((-r.retail_price) * r.commission_percent) / 100
-                WHEN '销售' THEN (r.retail_price * CASE
-                    WHEN fi.platform_seller_id = 11
-                    THEN o.sale_price_ru / (CAST(o.converted_price AS DOUBLE PRECISION) / 100)
-                    ELSE 1
-                END * r.commission_percent) / 100
+                WHEN '销售' THEN (r.retail_price * rr.currency_rate * r.commission_percent) / 100
                 ELSE 0
             END
         )
-        + SUM(r.acquiring_fee)
+        + SUM(CASE WHEN r.currency_name = 'cny' THEN r.acquiring_fee * rr.currency_rate ELSE r.acquiring_fee END)
         + SUM(
             CASE
-                WHEN r.currency_name = 'cny'
-                THEN r.delivery_rub * CASE
-                    WHEN fi.platform_seller_id = 11
-                    THEN o.sale_price_ru / (CAST(o.converted_price AS DOUBLE PRECISION) / 100)
-                    ELSE 1
-                END
+                WHEN r.currency_name = 'cny' THEN r.delivery_rub * rr.currency_rate
                 ELSE r.delivery_rub
             END
         )
-        + SUM(r.penalty)
-        + SUM(r.acceptance)
-        + SUM(r.storage_fee) AS report_market_services
+        + SUM(CASE WHEN r.currency_name = 'cny' THEN r.penalty * rr.currency_rate ELSE r.penalty END)
+        + SUM(CASE WHEN r.currency_name = 'cny' THEN r.acceptance * rr.currency_rate ELSE r.acceptance END)
+        + SUM(CASE WHEN r.currency_name = 'cny' THEN r.storage_fee * rr.currency_rate ELSE r.storage_fee END) AS report_market_services,
+        SUM(
+            CASE
+                WHEN r.currency_name = 'cny' AND r.doc_type_name IN ('销售', 'Продажа') THEN r.retail_price
+                WHEN r.currency_name = 'cny' AND r.doc_type_name = 'Возврат' THEN -r.retail_price
+                ELSE NULL
+            END
+        ) AS report_sell_price_cny,
+        SUM(
+            CASE
+                WHEN r.currency_name = 'cny' AND r.doc_type_name IN ('销售', 'Продажа')
+                THEN (r.retail_price * r.commission_percent) / 100
+                WHEN r.currency_name = 'cny' AND r.doc_type_name = 'Возврат'
+                THEN ((-r.retail_price) * r.commission_percent) / 100
+                ELSE NULL
+            END
+        ) AS report_commission_cny,
+        SUM(CASE WHEN r.currency_name = 'cny' THEN r.acquiring_fee ELSE NULL END) AS report_acquiring_fee_cny,
+        SUM(CASE WHEN r.currency_name = 'cny' THEN r.delivery_rub ELSE NULL END) AS report_delivery_fee_cny,
+        SUM(CASE WHEN r.currency_name = 'cny' THEN r.penalty ELSE NULL END) AS report_penalty_cny,
+        SUM(CASE WHEN r.currency_name = 'cny' THEN r.acceptance ELSE NULL END) AS report_acceptance_cny,
+        SUM(CASE WHEN r.currency_name = 'cny' THEN r.storage_fee ELSE NULL END) AS report_storage_fee_cny,
+        SUM(
+            CASE
+                WHEN r.currency_name = 'cny' AND r.doc_type_name IN ('销售', 'Продажа')
+                THEN (r.retail_price * r.commission_percent) / 100
+                WHEN r.currency_name = 'cny' AND r.doc_type_name = 'Возврат'
+                THEN ((-r.retail_price) * r.commission_percent) / 100
+                ELSE NULL
+            END
+        )
+        + SUM(CASE WHEN r.currency_name = 'cny' THEN r.acquiring_fee ELSE 0 END)
+        + SUM(CASE WHEN r.currency_name = 'cny' THEN r.delivery_rub ELSE 0 END)
+        + SUM(CASE WHEN r.currency_name = 'cny' THEN r.penalty ELSE 0 END)
+        + SUM(CASE WHEN r.currency_name = 'cny' THEN r.acceptance ELSE 0 END)
+        + SUM(CASE WHEN r.currency_name = 'cny' THEN r.storage_fee ELSE 0 END) AS report_market_services_cny,
+        SUM(
+            CASE
+                WHEN r.currency_name = 'cny' AND r.doc_type_name IN ('销售', 'Продажа') THEN r.retail_price
+                WHEN r.currency_name = 'cny' AND r.doc_type_name = 'Возврат' THEN -r.retail_price
+                ELSE NULL
+            END
+        )
+        - (
+            SUM(
+                CASE
+                    WHEN r.currency_name = 'cny' AND r.doc_type_name IN ('销售', 'Продажа')
+                    THEN (r.retail_price * r.commission_percent) / 100
+                    WHEN r.currency_name = 'cny' AND r.doc_type_name = 'Возврат'
+                    THEN ((-r.retail_price) * r.commission_percent) / 100
+                    ELSE NULL
+                END
+            )
+            + SUM(CASE WHEN r.currency_name = 'cny' THEN r.acquiring_fee ELSE 0 END)
+            + SUM(CASE WHEN r.currency_name = 'cny' THEN r.delivery_rub ELSE 0 END)
+            + SUM(CASE WHEN r.currency_name = 'cny' THEN r.penalty ELSE 0 END)
+            + SUM(CASE WHEN r.currency_name = 'cny' THEN r.acceptance ELSE 0 END)
+            + SUM(CASE WHEN r.currency_name = 'cny' THEN r.storage_fee ELSE 0 END)
+        ) AS report_payout_cny,
+        MAX(r.currency_name) AS report_currency,
+        MAX(r.rr_dt) AS report_payment_date
     FROM e_com.wb_reports r
     WHERE r.wb_orders_id = o.id
 ) ra ON TRUE

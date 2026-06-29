@@ -3,7 +3,9 @@
 import pandas as pd
 import pytest
 
+from wolle_economy.db.queries import build_wb_order_items_query
 from wolle_economy.domain.economics_wb import calc_wb_economics
+from wolle_economy.ui.components.orders.table_wb import _WB_ALL_COLUMNS
 
 _WB_BASE_ROW: dict = {
     "wb_order_id": 9001,
@@ -58,6 +60,7 @@ def test_delivered_profit_and_payout() -> None:
     # our_costs = 900 + 50 + 20 = 970
     # profit = 410
     assert df["income_after_fees"].iloc[0] == pytest.approx(1380.0)
+    assert df["expected_payout"].iloc[0] == pytest.approx(1380.0)
     assert df["our_costs"].iloc[0] == pytest.approx(970.0)
     assert df["profit"].iloc[0] == pytest.approx(410.0)
     assert df["payment_status"].iloc[0] == "Переведён"
@@ -85,3 +88,35 @@ def test_returned_status_uses_income_after_fees() -> None:
     assert df["is_returned"].iloc[0] == True  # noqa: E712
     # DataLens reference: canceled/returned statuses use income after WB fees.
     assert df["profit_no_promo"].iloc[0] == pytest.approx(-120.0)
+
+
+def test_wb_query_includes_cny_report_fields() -> None:
+    sql, _ = build_wb_order_items_query()
+    sql_text = str(sql)
+
+    expected_aliases = {
+        "report_sell_price_cny",
+        "report_commission_cny",
+        "report_acquiring_fee_cny",
+        "report_delivery_fee_cny",
+        "report_market_services_cny",
+        "report_payout_cny",
+        "report_currency",
+    }
+
+    for alias in expected_aliases:
+        assert f"AS {alias}" in sql_text
+
+
+def test_show_all_columns_include_cny_report_fields() -> None:
+    expected = {
+        "report_sell_price_cny",
+        "report_commission_cny",
+        "report_acquiring_fee_cny",
+        "report_delivery_fee_cny",
+        "report_market_services_cny",
+        "report_payout_cny",
+        "report_currency",
+    }
+
+    assert expected.issubset(_WB_ALL_COLUMNS)

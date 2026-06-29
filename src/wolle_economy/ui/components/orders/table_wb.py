@@ -39,21 +39,31 @@ _WB_REFERENCE_COLUMNS = [
     "ff_fee",
     "category_fee",
     "report_commission",
+    "report_commission_cny",
     "commission_fee_diff",
     "acquiring_fee_plan",
     "report_acquiring_fee",
+    "report_acquiring_fee_cny",
     "delivery_fee_plan",
     "report_delivery_fee",
+    "report_delivery_fee_cny",
     "delivery_fee_diff",
     "min_price_multiplier",
     "wb_profit_on_purchase_pct",
     "final_price",
     "sell_price_plan",
     "report_sell_price",
+    "report_sell_price_cny",
     "report_penalty",
+    "report_penalty_cny",
     "report_compensation",
     "report_acceptance",
+    "report_acceptance_cny",
     "report_storage_fee",
+    "report_storage_fee_cny",
+    "report_market_services_cny",
+    "report_payout_cny",
+    "report_currency",
     "income_after_fees",
     "expected_profit",
     "profit",
@@ -80,6 +90,8 @@ for _col, _label in COLUMN_LABELS.items():
         _WB_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_PCT_FMT)
     elif _col in {"currency_rate", "min_price_multiplier"}:
         _WB_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format="%.4f")
+    elif _col.endswith("_cny"):
+        _WB_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format="¥%.2f")
     elif _col in {
         "base_price",
         "base_price_total",
