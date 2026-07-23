@@ -3,7 +3,14 @@ import io
 import pandas as pd
 import streamlit as st
 
-from wolle_economy.ui.columns import COLUMN_LABELS, DISPLAY_COLUMNS
+from wolle_economy.ui.columns import (
+    COLUMN_LABELS,
+    DISPLAY_COLUMNS,
+    SM_ALL_COLUMNS,
+)
+
+# Backward compatibility для существующих импортов и тестов.
+_SM_ALL_COLUMNS = SM_ALL_COLUMNS
 
 _SM_TECHNICAL_COLUMNS = {
     "bonus_points",
@@ -21,40 +28,6 @@ _SM_TECHNICAL_COLUMNS = {
 }
 
 _SM_MAIN_COLUMNS = [c for c in DISPLAY_COLUMNS if c not in _SM_TECHNICAL_COLUMNS]
-_SM_REFERENCE_COLUMNS = [
-    "created_at",
-    "date_realization",
-    "order_id_str",
-    "order_status",
-    "offer_id",
-    "product_name",
-    "quantity",
-    "supplier_name",
-    "shipment_date",
-    "base_price_total",
-    "supplier_price_fact_total",
-    "ff_fee",
-    "socket_adapter_fee",
-    "category_fee_percent",
-    "agent_rate_percent",
-    "category_fee",
-    "agent_rate",
-    "delivery_fee",
-    "logistic",
-    "modifier_price",
-    "min_price_multiplier",
-    "sm_profit_on_purchase_pct",
-    "margin_price",
-    "margin_price_total",
-    "seller_price_unit",
-    "diff_from_min_price",
-    "expected_profit",
-    "profit_unit",
-    "profit",
-    "expected_payout",
-    "payout_if_paid",
-]
-_SM_ALL_COLUMNS = _SM_REFERENCE_COLUMNS + [c for c in DISPLAY_COLUMNS if c not in _SM_REFERENCE_COLUMNS]
 _SM_COLUMN_LABELS = {
     **COLUMN_LABELS,
     "date_realization": "Дата реализации",
@@ -161,7 +134,7 @@ def _to_excel(df: pd.DataFrame) -> bytes:
 def show_sm_table(df: pd.DataFrame) -> None:
     show_all = st.toggle("Показать все колонки", value=False, key="sm_show_all_cols")
 
-    cols = [c for c in (_SM_ALL_COLUMNS if show_all else _SM_MAIN_COLUMNS) if c in df.columns]
+    cols = [c for c in (SM_ALL_COLUMNS if show_all else _SM_MAIN_COLUMNS) if c in df.columns]
     view = df[cols].rename(columns=_SM_COLUMN_LABELS)
 
     st.dataframe(view, width="stretch", hide_index=True, column_config=_SM_COLUMN_CONFIG)

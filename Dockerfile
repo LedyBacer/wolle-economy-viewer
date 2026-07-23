@@ -18,7 +18,7 @@ RUN pip install .
 
 COPY . .
 
-EXPOSE 8501
+EXPOSE 8501 8506
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD curl -fsS http://localhost:8501/_stcore/health || exit 1

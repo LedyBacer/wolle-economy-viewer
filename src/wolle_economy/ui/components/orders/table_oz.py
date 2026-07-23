@@ -3,7 +3,14 @@ import io
 import pandas as pd
 import streamlit as st
 
-from wolle_economy.ui.columns import COLUMN_LABELS, DISPLAY_COLUMNS
+from wolle_economy.ui.columns import (
+    COLUMN_LABELS,
+    DISPLAY_COLUMNS,
+    OZ_ALL_COLUMNS,
+)
+
+# Backward compatibility для существующих импортов и тестов.
+_OZ_ALL_COLUMNS = OZ_ALL_COLUMNS
 
 _OZ_TECHNICAL_COLUMNS = {
     "bonus_points",
@@ -24,38 +31,6 @@ _OZ_TECHNICAL_COLUMNS = {
 }
 
 _OZ_MAIN_COLUMNS = [c for c in DISPLAY_COLUMNS if c not in _OZ_TECHNICAL_COLUMNS]
-_OZ_REFERENCE_COLUMNS = [
-    "created_at",
-    "order_id_str",
-    "order_status",
-    "offer_id",
-    "product_name",
-    "quantity",
-    "supplier_name",
-    "shipment_date",
-    "base_price_total",
-    "supplier_price_fact_total",
-    "socket_adapter_total",
-    "ff_fee_total",
-    "category_fee",
-    "category_fee_fact",
-    "acquiring_fee_plan",
-    "acquiring_fee_fact",
-    "last_mile",
-    "last_mile_fact",
-    "order_process_delivery",
-    "order_process_delivery_fact",
-    "min_price_multiplier",
-    "margin_price",
-    "price",
-    "revenue_after_commission",
-    "expected_profit",
-    "profit_fact",
-    "cancel_penalty",
-    "late_shipment_penalty",
-    "late_recommend_penalty",
-]
-_OZ_ALL_COLUMNS = _OZ_REFERENCE_COLUMNS + [c for c in DISPLAY_COLUMNS if c not in _OZ_REFERENCE_COLUMNS]
 _OZ_COLUMN_LABELS = {
     **COLUMN_LABELS,
     "base_price": "Цена закупки за шт.",
@@ -170,7 +145,7 @@ def _to_excel(df: pd.DataFrame) -> bytes:
 def show_oz_table(df: pd.DataFrame) -> None:
     show_all = st.toggle("Показать все колонки", value=False, key="oz_show_all_cols")
 
-    cols = [c for c in (_OZ_ALL_COLUMNS if show_all else _OZ_MAIN_COLUMNS) if c in df.columns]
+    cols = [c for c in (OZ_ALL_COLUMNS if show_all else _OZ_MAIN_COLUMNS) if c in df.columns]
     view = df[cols].rename(columns=_OZ_COLUMN_LABELS)
 
     st.dataframe(view, width="stretch", hide_index=True, column_config=_OZ_COLUMN_CONFIG)

@@ -23,7 +23,10 @@ def calc_sm_economics(df: pd.DataFrame) -> pd.DataFrame:
 
     out["ya_order_id"] = out["sm_order_id"]
     out["channel"] = "sportmaster"
-    out["seller_name"] = "Sportmaster"
+    if "seller_name" not in out.columns:
+        out["seller_name"] = "Sportmaster"
+    else:
+        out["seller_name"] = out["seller_name"].fillna("Sportmaster")
     out["seller_location"] = "RU"
 
     out["base_price"] = _num(out["base_price"])

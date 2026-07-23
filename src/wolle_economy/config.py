@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     db_user: str
     db_password: str
 
-    # TTL кэша Streamlit (секунды)
+    # TTL кэшей Streamlit и полного снимка API (секунды)
     cache_ttl: int = Field(default=3600)
 
 

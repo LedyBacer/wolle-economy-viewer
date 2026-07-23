@@ -72,6 +72,8 @@ def _load_orders_for_code(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
+    order_id: str | None = None,
+    offer_id: str | None = None,
 ) -> pd.DataFrame:
     canonical_code = _normalize_marketplace_code(code)
     impl_by_code: dict[str, Callable[..., pd.DataFrame]] = {
@@ -85,6 +87,8 @@ def _load_orders_for_code(
         seller_ids=seller_ids,
         date_from=date_from,
         date_to=date_to,
+        order_id=order_id,
+        offer_id=offer_id,
     )
 
 
@@ -97,6 +101,8 @@ def _load_ym_orders_impl(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
+    order_id: str | None = None,
+    offer_id: str | None = None,
 ) -> pd.DataFrame:
     logger.info(
         "Загрузка заказов YM: seller_ids=%s date_from=%s date_to=%s",
@@ -105,10 +111,14 @@ def _load_ym_orders_impl(
         date_to,
     )
     engine = get_engine()
-    orders_sql, orders_params = build_order_items_query(seller_ids, date_from, date_to)
-    payments_sql, payments_params = build_payment_aggregates_query(seller_ids, date_from, date_to)
+    orders_sql, orders_params = build_order_items_query(
+        seller_ids, date_from, date_to, order_id, offer_id
+    )
+    payments_sql, payments_params = build_payment_aggregates_query(
+        seller_ids, date_from, date_to, order_id
+    )
     supplier_sql, supplier_params = build_supplier_price_fact_query(
-        seller_ids, date_from, date_to
+        seller_ids, date_from, date_to, order_id, offer_id
     )
 
     try:
@@ -173,6 +183,8 @@ def _load_mm_orders_impl(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
+    order_id: str | None = None,
+    offer_id: str | None = None,
 ) -> pd.DataFrame:
     logger.info(
         "Загрузка заказов MM: seller_ids=%s date_from=%s date_to=%s",
@@ -182,9 +194,11 @@ def _load_mm_orders_impl(
     )
     engine = get_engine()
 
-    dbs_sql, dbs_params = build_mm_dbs_order_items_query(seller_ids, date_from, date_to)
+    dbs_sql, dbs_params = build_mm_dbs_order_items_query(
+        seller_ids, date_from, date_to, order_id, offer_id
+    )
     poizon_sql, poizon_params = build_mm_poizon_order_items_query(
-        seller_ids, date_from, date_to
+        seller_ids, date_from, date_to, order_id, offer_id
     )
 
     try:
@@ -250,6 +264,8 @@ def _load_sm_orders_impl(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
+    order_id: str | None = None,
+    offer_id: str | None = None,
 ) -> pd.DataFrame:
     logger.info(
         "Загрузка заказов SM: seller_ids=%s date_from=%s date_to=%s",
@@ -258,7 +274,9 @@ def _load_sm_orders_impl(
         date_to,
     )
     engine = get_engine()
-    sql, params = build_sm_order_items_query(seller_ids, date_from, date_to)
+    sql, params = build_sm_order_items_query(
+        seller_ids, date_from, date_to, order_id, offer_id
+    )
 
     try:
         with engine.connect() as conn:
@@ -314,6 +332,8 @@ def _load_wb_orders_impl(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
+    order_id: str | None = None,
+    offer_id: str | None = None,
 ) -> pd.DataFrame:
     logger.info(
         "Загрузка заказов WB: seller_ids=%s date_from=%s date_to=%s",
@@ -322,7 +342,9 @@ def _load_wb_orders_impl(
         date_to,
     )
     engine = get_engine()
-    sql, params = build_wb_order_items_query(seller_ids, date_from, date_to)
+    sql, params = build_wb_order_items_query(
+        seller_ids, date_from, date_to, order_id, offer_id
+    )
 
     try:
         with engine.connect() as conn:
@@ -378,6 +400,8 @@ def _load_oz_orders_impl(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
+    order_id: str | None = None,
+    offer_id: str | None = None,
 ) -> pd.DataFrame:
     logger.info(
         "Загрузка заказов OZ: seller_ids=%s date_from=%s date_to=%s",
@@ -386,7 +410,9 @@ def _load_oz_orders_impl(
         date_to,
     )
     engine = get_engine()
-    sql, params = build_oz_order_items_query(seller_ids, date_from, date_to)
+    sql, params = build_oz_order_items_query(
+        seller_ids, date_from, date_to, order_id, offer_id
+    )
 
     try:
         with engine.connect() as conn:
@@ -532,3 +558,24 @@ def load_orders_by_marketplace(
     """Универсальный загрузчик заказов через реестр маркетплейсов."""
     spec = get_marketplace_spec(code)
     return spec.load_orders(seller_ids=seller_ids, date_from=date_from, date_to=date_to)
+
+
+def load_order_economics_data(
+    code: str,
+    *,
+    seller_id: int,
+    order_id: str,
+    offer_id: str,
+) -> pd.DataFrame:
+    """Точечно загружает позицию заказа без Streamlit-кэша."""
+    return _load_orders_for_code(
+        code,
+        seller_ids=(seller_id,),
+        order_id=order_id,
+        offer_id=offer_id,
+    )
+
+
+def load_all_order_economics_data(code: str) -> pd.DataFrame:
+    """Загружает полный снимок маркетплейса без Streamlit-кэша."""
+    return _load_orders_for_code(code)

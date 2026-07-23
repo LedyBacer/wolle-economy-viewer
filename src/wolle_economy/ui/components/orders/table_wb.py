@@ -3,7 +3,14 @@ import io
 import pandas as pd
 import streamlit as st
 
-from wolle_economy.ui.columns import COLUMN_LABELS, DISPLAY_COLUMNS
+from wolle_economy.ui.columns import (
+    COLUMN_LABELS,
+    DISPLAY_COLUMNS,
+    WB_ALL_COLUMNS,
+)
+
+# Backward compatibility для существующих импортов и тестов.
+_WB_ALL_COLUMNS = WB_ALL_COLUMNS
 
 _WB_TECHNICAL_COLUMNS = {
     "bonus_points",
@@ -24,54 +31,6 @@ _WB_TECHNICAL_COLUMNS = {
 }
 
 _WB_MAIN_COLUMNS = [c for c in DISPLAY_COLUMNS if c not in _WB_TECHNICAL_COLUMNS]
-_WB_REFERENCE_COLUMNS = [
-    "created_at",
-    "order_id_str",
-    "order_status",
-    "offer_id",
-    "product_name",
-    "seller_name",
-    "supplier_name",
-    "shipment_date",
-    "base_price",
-    "supplier_price_fact",
-    "socket_adapter_fee",
-    "ff_fee",
-    "category_fee",
-    "report_commission",
-    "report_commission_cny",
-    "commission_fee_diff",
-    "acquiring_fee_plan",
-    "report_acquiring_fee",
-    "report_acquiring_fee_cny",
-    "delivery_fee_plan",
-    "report_delivery_fee",
-    "report_delivery_fee_cny",
-    "delivery_fee_diff",
-    "min_price_multiplier",
-    "wb_profit_on_purchase_pct",
-    "final_price",
-    "sell_price_plan",
-    "report_sell_price",
-    "report_sell_price_cny",
-    "report_penalty",
-    "report_penalty_cny",
-    "report_compensation",
-    "report_acceptance",
-    "report_acceptance_cny",
-    "report_storage_fee",
-    "report_storage_fee_cny",
-    "report_market_services_cny",
-    "report_payout_cny",
-    "report_currency",
-    "income_after_fees",
-    "expected_profit",
-    "profit",
-    "profit_vs_expected",
-    "currency_rate",
-]
-_WB_ALL_COLUMNS = _WB_REFERENCE_COLUMNS + [c for c in DISPLAY_COLUMNS if c not in _WB_REFERENCE_COLUMNS]
-
 _MONEY_FMT = "%.2f ₽"
 _PCT_FMT = "%.1f %%"
 _WB_COLUMN_CONFIG: dict = {}
@@ -155,7 +114,7 @@ def _to_excel(df: pd.DataFrame) -> bytes:
 def show_wb_table(df: pd.DataFrame) -> None:
     show_all = st.toggle("Показать все колонки", value=False, key="wb_show_all_cols")
 
-    cols = [c for c in (_WB_ALL_COLUMNS if show_all else _WB_MAIN_COLUMNS) if c in df.columns]
+    cols = [c for c in (WB_ALL_COLUMNS if show_all else _WB_MAIN_COLUMNS) if c in df.columns]
     view = df[cols].rename(columns=COLUMN_LABELS)
 
     st.dataframe(view, width="stretch", hide_index=True, column_config=_WB_COLUMN_CONFIG)

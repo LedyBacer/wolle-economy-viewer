@@ -28,8 +28,12 @@ def _build_common_filters(
     date_to: datetime.date | None,
     seller_expr: str,
     created_at_expr: str,
+    order_id: str | None = None,
+    offer_id: str | None = None,
+    order_expr: str | None = None,
+    offer_expr: str | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
-    """Собирает SQL-условия фильтрации по продавцам и диапазону дат."""
+    """Собирает SQL-условия фильтрации заказов."""
     conditions: list[str] = []
     params: dict[str, Any] = {}
 
@@ -44,6 +48,18 @@ def _build_common_filters(
     if date_to is not None:
         conditions.append(f"{created_at_expr} < :date_to_exclusive")
         params["date_to_exclusive"] = date_to + datetime.timedelta(days=1)
+
+    if order_id is not None:
+        if order_expr is None:
+            raise ValueError("order_expr is required when order_id is set")
+        conditions.append(f"CAST({order_expr} AS TEXT) = :order_id")
+        params["order_id"] = order_id
+
+    if offer_id is not None:
+        if offer_expr is None:
+            raise ValueError("offer_expr is required when offer_id is set")
+        conditions.append(f"CAST({offer_expr} AS TEXT) = :offer_id")
+        params["offer_id"] = offer_id
 
     return conditions, params
 
@@ -61,6 +77,7 @@ SELECT
     -- Время и продавец
     o.created_at                  AS created_at,
     o.shipment_date               AS shipment_date,
+    s.id                          AS seller_id,
     s.seller_name                 AS seller_name,
     s.location                    AS seller_location,
 
@@ -195,6 +212,8 @@ def build_order_items_query(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
+    order_id: str | None = None,
+    offer_id: str | None = None,
 ) -> tuple[TextClause, dict[str, Any]]:
     """
     Возвращает (sql, params) для запроса позиций заказов.
@@ -213,6 +232,10 @@ def build_order_items_query(
         date_to=date_to,
         seller_expr="o.seller_id",
         created_at_expr="o.created_at",
+        order_id=order_id,
+        offer_id=offer_id,
+        order_expr="o.order_id",
+        offer_expr="i.offer_id",
     )
 
     where = ("\nWHERE " + "\n  AND ".join(conditions)) if conditions else ""
@@ -293,6 +316,7 @@ def build_payment_aggregates_query(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
+    order_id: str | None = None,
 ) -> tuple[TextClause, dict[str, Any]]:
     """
     Возвращает (sql, params) для запроса агрегированных данных о платежах.
@@ -303,7 +327,7 @@ def build_payment_aggregates_query(
     params: dict[str, Any] = {}
     extra_conditions: list[str] = []
 
-    if seller_ids or date_from is not None or date_to is not None:
+    if seller_ids or date_from is not None or date_to is not None or order_id is not None:
         sub_conditions = ["o2.id = p.ya_orders_id"]
 
         if seller_ids:
@@ -317,6 +341,10 @@ def build_payment_aggregates_query(
         if date_to is not None:
             sub_conditions.append("o2.created_at < :date_to_exclusive")
             params["date_to_exclusive"] = date_to + datetime.timedelta(days=1)
+
+        if order_id is not None:
+            sub_conditions.append("CAST(o2.order_id AS TEXT) = :order_id")
+            params["order_id"] = order_id
 
         sub_where = " AND ".join(sub_conditions)
         extra_conditions.append(f"EXISTS (SELECT 1 FROM e_com.ya_orders o2 WHERE {sub_where})")
@@ -405,6 +433,8 @@ def build_supplier_price_fact_query(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
+    order_id: str | None = None,
+    offer_id: str | None = None,
 ) -> tuple[TextClause, dict[str, Any]]:
     """
     Возвращает (sql, params) для запроса фактических закупочных цен по позициям.
@@ -418,6 +448,10 @@ def build_supplier_price_fact_query(
         date_to=date_to,
         seller_expr="o.seller_id",
         created_at_expr="o.created_at",
+        order_id=order_id,
+        offer_id=offer_id,
+        order_expr="o.order_id",
+        offer_expr="yai.offer_id",
     )
 
     where = ("\nWHERE " + "\n  AND ".join(conditions)) if conditions else ""
@@ -433,6 +467,12 @@ SELECT id, seller_name
 FROM e_com.platform_sellers
 WHERE platform_for_sell_id = 1
 ORDER BY seller_name
+""")
+
+PLATFORM_SELLER_SQL = text("""
+SELECT id, seller_name, platform_for_sell_id
+FROM e_com.platform_sellers
+WHERE id = :seller_id
 """)
 
 
@@ -619,6 +659,8 @@ def build_mm_dbs_order_items_query(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
+    order_id: str | None = None,
+    offer_id: str | None = None,
 ) -> tuple[TextClause, dict[str, Any]]:
     """Возвращает (sql, params) для DBS-заказов МегаМаркет."""
     conditions, params = _build_common_filters(
@@ -627,6 +669,10 @@ def build_mm_dbs_order_items_query(
         date_to=date_to,
         seller_expr="o.seller_id",
         created_at_expr="o.created_at",
+        order_id=order_id,
+        offer_id=offer_id,
+        order_expr="o.shipment_id",
+        offer_expr="i.offer_id",
     )
 
     extra = ("\n  AND " + "\n  AND ".join(conditions)) if conditions else ""
@@ -729,6 +775,8 @@ def build_mm_poizon_order_items_query(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
+    order_id: str | None = None,
+    offer_id: str | None = None,
 ) -> tuple[TextClause, dict[str, Any]]:
     """Возвращает (sql, params) для Poizon-заказов МегаМаркет."""
     conditions, params = _build_common_filters(
@@ -737,6 +785,10 @@ def build_mm_poizon_order_items_query(
         date_to=date_to,
         seller_expr="o.seller_id",
         created_at_expr="o.created_at",
+        order_id=order_id,
+        offer_id=offer_id,
+        order_expr="o.shipment_id",
+        offer_expr="i.offer_id",
     )
 
     extra = ("\n  AND " + "\n  AND ".join(conditions)) if conditions else ""
@@ -974,6 +1026,8 @@ def build_oz_order_items_query(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
+    order_id: str | None = None,
+    offer_id: str | None = None,
 ) -> tuple[TextClause, dict[str, Any]]:
     """Возвращает (sql, params) для заказов Ozon."""
     conditions, params = _build_common_filters(
@@ -982,6 +1036,10 @@ def build_oz_order_items_query(
         date_to=date_to,
         seller_expr="fi.platform_seller_id",
         created_at_expr="o.created_at",
+        order_id=order_id,
+        offer_id=offer_id,
+        order_expr="o.order_id",
+        offer_expr="o.offer_id",
     )
 
     extra = ("\n  AND " + "\n  AND ".join(conditions)) if conditions else ""
@@ -1293,6 +1351,8 @@ def build_wb_order_items_query(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
+    order_id: str | None = None,
+    offer_id: str | None = None,
 ) -> tuple[TextClause, dict[str, Any]]:
     """Возвращает (sql, params) для заказов Wildberries."""
     conditions, params = _build_common_filters(
@@ -1301,6 +1361,10 @@ def build_wb_order_items_query(
         date_to=date_to,
         seller_expr="o.seller_id",
         created_at_expr="o.created_at",
+        order_id=order_id,
+        offer_id=offer_id,
+        order_expr="o.order_id",
+        offer_expr="o.offer_id",
     )
 
     extra = ("\n  AND " + "\n  AND ".join(conditions)) if conditions else ""
@@ -1342,8 +1406,8 @@ SELECT
     t1.offer_id AS offer_id,
     t3.title AS product_name,
     t1.quantity AS quantity,
-    1 AS seller_id,
-    'Sportmaster' AS seller_name,
+    ps.id AS seller_id,
+    ps.seller_name AS seller_name,
     'RU' AS seller_location,
     t1.supplier_name AS supplier_name,
     t4.shipment_date AS shipment_date,
@@ -1507,6 +1571,8 @@ JOIN (
     FROM e_com.sm_feed_items
 ) AS t3
     ON t1.feed_item_id = t3.id
+JOIN e_com.platform_sellers ps
+    ON ps.platform_for_sell_id = 4
 """
 
 
@@ -1514,6 +1580,8 @@ def build_sm_order_items_query(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
     date_to: datetime.date | None = None,
+    order_id: str | None = None,
+    offer_id: str | None = None,
 ) -> tuple[TextClause, dict[str, Any]]:
     """Возвращает (sql, params) для заказов Sportmaster."""
     conditions, params = _build_common_filters(
@@ -1522,6 +1590,10 @@ def build_sm_order_items_query(
         date_to=date_to,
         seller_expr="sm.seller_id",
         created_at_expr="sm.created_at",
+        order_id=order_id,
+        offer_id=offer_id,
+        order_expr="sm.order_id",
+        offer_expr="sm.offer_id",
     )
 
     where = ("\nWHERE " + "\n  AND ".join(conditions)) if conditions else ""
@@ -1536,7 +1608,10 @@ def build_sm_order_items_query(
 
 
 SM_SELLERS_SQL = text("""
-SELECT 1 AS id, 'Sportmaster' AS seller_name
+SELECT id, seller_name
+FROM e_com.platform_sellers
+WHERE platform_for_sell_id = 4
+ORDER BY seller_name
 """)
 
 
