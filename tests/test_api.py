@@ -193,6 +193,9 @@ def test_serialize_order_row_uses_ui_columns_and_json_types() -> None:
             "order_id_str": "12345",
             "offer_id": "ABC",
             "quantity": np.int64(2),
+            "calc_accepting_payment_fee_total": Decimal("0.20"),
+            "fact_accepting_payment_fee": np.nan,
+            "fact_commission_details_complete": np.bool_(False),
             "profit": Decimal("42.50"),
             "actual_profit": np.nan,
             "internal_only": "hidden",
@@ -205,6 +208,9 @@ def test_serialize_order_row_uses_ui_columns_and_json_types() -> None:
     assert result["created_at"] == "2026-07-23T10:15:00+03:00"
     assert result["shipment_date"] == "2026-07-24"
     assert result["quantity"] == 2
+    assert result["calc_accepting_payment_fee_total"] == 0.2
+    assert result["fact_accepting_payment_fee"] is None
+    assert result["fact_commission_details_complete"] is False
     assert result["profit"] == 42.5
     assert result["actual_profit"] is None
     assert "internal_only" not in result

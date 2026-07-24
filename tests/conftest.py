@@ -6,7 +6,7 @@
 import pandas as pd
 import pytest
 
-from wolle_economy.enums import FulfillmentStatus, PaymentStatus, RETURNED_STATUSES
+from wolle_economy.enums import FulfillmentStatus, PaymentStatus
 
 # ---------------------------------------------------------------------------
 # Базовый шаблон строки заказа
@@ -18,6 +18,7 @@ _BASE_ROW: dict = {
     "ya_order_id": 1001,
     "order_id": 9001,
     "item_id": 1,
+    "order_items_count": 1,
     # Товар
     "quantity": 1,
     "offer_id": "OFFER-1",
@@ -58,8 +59,7 @@ _BASE_ROW: dict = {
     "late_ship_penalty": 0.0,
     # UI-поле
     "seller_name": "TestShop",
-    # Локация магазина: 'CN' → доставка из Китая добавляется в our_costs;
-    # 'RU' → доставка уже включена в market_services, не дублируем.
+    # Фиксированная доставка из снимка заказа входит в our_costs для любого магазина.
     "seller_location": "RU",
     "custom_delivery_fee": 0.0,
 }
@@ -202,12 +202,12 @@ def make_partial_return_order(**overrides) -> pd.DataFrame:
     row = {
         **_BASE_ROW,
         "quantity": 2,
-        "sell_price": 3000.0,       # за обе штуки из margin_report
+        "sell_price": 3000.0,  # за обе штуки из margin_report
         "market_services": 300.0,
         "fulfillment_status": FulfillmentStatus.PARTIALLY_RETURNED,
         "payment_status": PaymentStatus.TRANSFERRED,
-        "tr_bonuses": 200.0,        # только из строки доставки (возврат даёт 0)
-        "customer_refund": -1500.0, # только buyer_price возвращённой штуки
+        "tr_bonuses": 200.0,  # только из строки доставки (возврат даёт 0)
+        "customer_refund": -1500.0,  # только buyer_price возвращённой штуки
         "returned_sell_price": 1500.0,  # buyer_price + subsidy возвращённой штуки
         "tr_delivered_quantity": 1,
         "tr_customer_payment_date": "2024-01-15T10:00:00+00:00",

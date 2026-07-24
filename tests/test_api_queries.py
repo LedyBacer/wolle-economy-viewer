@@ -42,9 +42,7 @@ def test_order_query_has_exact_composite_filters(builder, order_expr: str, offer
 
 
 def test_yandex_related_queries_are_limited_to_requested_order() -> None:
-    payments_sql, payments_params = build_payment_aggregates_query(
-        (1,), None, None, "12345"
-    )
+    payments_sql, payments_params = build_payment_aggregates_query((1,), None, None, "12345")
     supplier_sql, supplier_params = build_supplier_price_fact_query(
         (1,), None, None, "12345", "ABC"
     )
@@ -58,3 +56,26 @@ def test_yandex_related_queries_are_limited_to_requested_order() -> None:
         "order_id": "12345",
         "offer_id": "ABC",
     }
+
+
+def test_yandex_order_query_selects_fixed_fee_snapshots() -> None:
+    sql, _ = build_order_items_query((1,), None, None, "12345", "ABC")
+    query = str(sql)
+
+    assert "markup_yandex_accepting_payments_fee_amount" in query
+    assert "AS calc_accepting_payment_fee" in query
+    assert "markup_yandex_order_processing_fee_amount" in query
+    assert "AS calc_order_processing_fee" in query
+    assert "AS order_items_count" in query
+
+
+def test_payment_query_classifies_fact_commission_details() -> None:
+    sql, _ = build_payment_aggregates_query((1,), None, None, "12345")
+    query = str(sql)
+
+    assert "'Размещение товарных предложений'" in query
+    assert "'Перевод платежа'" in query
+    assert "'Приём платежа'" in query
+    assert "'Начисления за доставку'" in query
+    assert "AS fact_unclassified_fees" in query
+    assert "AS fact_commission_details_complete" in query

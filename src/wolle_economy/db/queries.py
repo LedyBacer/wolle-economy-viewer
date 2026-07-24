@@ -73,6 +73,11 @@ SELECT
     o.id                          AS ya_order_id,
     o.order_id                    AS order_id,
     i.id                          AS item_id,
+    (
+        SELECT COUNT(*)
+        FROM e_com.ya_order_items order_item_count
+        WHERE order_item_count.order_id = o.id
+    )                             AS order_items_count,
 
     -- Время и продавец
     o.created_at                  AS created_at,
@@ -115,9 +120,12 @@ SELECT
     i.margin_percent              AS margin_percent,
     COALESCE(ff.value, 0)         AS ff_fee,
     COALESCE(sa.value, 0)         AS socket_adapter_fee,
-    -- Стоимость доставки из Китая (только для CN-магазинов — наш расход,
-    -- не включён в market_services; для RU-магазинов = ЯМ-доставка, уже в market_services)
+    -- Фиксированная доставка из снимка расчёта заказа (наш расход).
     COALESCE(i.markup_custom_delivery_fee_value_amount, 0) AS custom_delivery_fee,
+    COALESCE(i.markup_yandex_accepting_payments_fee_amount, 0)
+        AS calc_accepting_payment_fee,
+    COALESCE(i.markup_yandex_order_processing_fee_amount, 0)
+        AS calc_order_processing_fee,
 
     -- Данные из отчёта о марже (на уровне заказа)
     mr.sell_price                 AS sell_price,
@@ -247,6 +255,43 @@ def build_order_items_query(
 # Агрегаты платежей — фильтруется по тому же набору заказов через подзапрос
 # ---------------------------------------------------------------------------
 _PAYMENT_AGGREGATES_SELECT = """
+WITH classified_payments AS (
+    SELECT
+        p.*,
+        (
+            p.transaction_amount < 0
+            AND (
+                p.transaction_source = 'Оплата услуг Яндекс.Маркета'
+                OR (p.transaction_source IS NULL AND p.payment_status = 'Удержание')
+            )
+        ) AS is_fact_commission,
+        CASE
+            WHEN p.item_name_or_service_name IS NULL
+                THEN 'unclassified'
+            WHEN p.item_name_or_service_name = 'Размещение товарных предложений'
+                THEN 'category'
+            WHEN p.item_name_or_service_name = 'Перевод платежа'
+                THEN 'transfer'
+            WHEN p.item_name_or_service_name = 'Приём платежа'
+                THEN 'accepting_payment'
+            WHEN p.item_name_or_service_name IN (
+                'Обработка заказа',
+                'Обработка заказа продавцом'
+            )
+                THEN 'order_processing'
+            WHEN p.item_name_or_service_name IN (
+                'Начисления за доставку',
+                'Доставка (средняя миля)',
+                'Доставка покупателю',
+                'Доставка невыкупов и возвратов',
+                'Корректировка начисления за доставку'
+            )
+                THEN 'delivery'
+            ELSE 'other'
+        END AS fact_commission_kind
+    FROM e_com.ya_payments_reports p
+    WHERE p.ya_orders_id IS NOT NULL
+)
 SELECT
     ya_orders_id,
     MAX(CASE
@@ -266,13 +311,85 @@ SELECT
     -- Так исключаем промо-списания (payment_status='Списание'), у которых item_name
     -- совпадает с реальными комиссиями, что раньше приводило к двойному счёту.
     SUM(CASE
-        WHEN transaction_amount < 0
-         AND (
-            transaction_source = 'Оплата услуг Яндекс.Маркета'
-            OR (transaction_source IS NULL AND payment_status = 'Удержание')
-         )
+        WHEN is_fact_commission
         THEN -transaction_amount ELSE 0
     END) AS fact_commissions,
+    COALESCE(BOOL_OR(is_fact_commission), FALSE) AS fact_commissions_available,
+
+    -- В новом формате название услуги часто отсутствует. В таком случае
+    -- общий факт известен, но детализацию нельзя честно распределить по видам.
+    (
+        COALESCE(BOOL_OR(is_fact_commission), FALSE)
+        AND NOT COALESCE(
+            BOOL_OR(is_fact_commission AND fact_commission_kind = 'unclassified'),
+            FALSE
+        )
+    ) AS fact_commission_details_complete,
+    SUM(CASE
+        WHEN is_fact_commission AND fact_commission_kind = 'unclassified'
+        THEN -transaction_amount ELSE 0
+    END) AS fact_unclassified_fees,
+
+    CASE WHEN
+        COALESCE(BOOL_OR(is_fact_commission), FALSE)
+        AND NOT COALESCE(
+            BOOL_OR(is_fact_commission AND fact_commission_kind = 'unclassified'),
+            FALSE
+        )
+    THEN SUM(CASE
+        WHEN is_fact_commission AND fact_commission_kind = 'category'
+        THEN -transaction_amount ELSE 0
+    END) END AS fact_category_fee,
+    CASE WHEN
+        COALESCE(BOOL_OR(is_fact_commission), FALSE)
+        AND NOT COALESCE(
+            BOOL_OR(is_fact_commission AND fact_commission_kind = 'unclassified'),
+            FALSE
+        )
+    THEN SUM(CASE
+        WHEN is_fact_commission AND fact_commission_kind = 'transfer'
+        THEN -transaction_amount ELSE 0
+    END) END AS fact_transfer_fee,
+    CASE WHEN
+        COALESCE(BOOL_OR(is_fact_commission), FALSE)
+        AND NOT COALESCE(
+            BOOL_OR(is_fact_commission AND fact_commission_kind = 'unclassified'),
+            FALSE
+        )
+    THEN SUM(CASE
+        WHEN is_fact_commission AND fact_commission_kind = 'delivery'
+        THEN -transaction_amount ELSE 0
+    END) END AS fact_delivery_fee,
+    CASE WHEN
+        COALESCE(BOOL_OR(is_fact_commission), FALSE)
+        AND NOT COALESCE(
+            BOOL_OR(is_fact_commission AND fact_commission_kind = 'unclassified'),
+            FALSE
+        )
+    THEN SUM(CASE
+        WHEN is_fact_commission AND fact_commission_kind = 'accepting_payment'
+        THEN -transaction_amount ELSE 0
+    END) END AS fact_accepting_payment_fee,
+    CASE WHEN
+        COALESCE(BOOL_OR(is_fact_commission), FALSE)
+        AND NOT COALESCE(
+            BOOL_OR(is_fact_commission AND fact_commission_kind = 'unclassified'),
+            FALSE
+        )
+    THEN SUM(CASE
+        WHEN is_fact_commission AND fact_commission_kind = 'order_processing'
+        THEN -transaction_amount ELSE 0
+    END) END AS fact_order_processing_fee,
+    CASE WHEN
+        COALESCE(BOOL_OR(is_fact_commission), FALSE)
+        AND NOT COALESCE(
+            BOOL_OR(is_fact_commission AND fact_commission_kind = 'unclassified'),
+            FALSE
+        )
+    THEN SUM(CASE
+        WHEN is_fact_commission AND fact_commission_kind = 'other'
+        THEN -transaction_amount ELSE 0
+    END) END AS fact_other_fees,
 
     -- Штраф: отмена по вине продавца
     SUM(CASE
@@ -307,8 +424,8 @@ SELECT
         THEN transaction_amount ELSE 0
     END) AS promo_discounts
 
-FROM e_com.ya_payments_reports
-WHERE ya_orders_id IS NOT NULL
+FROM classified_payments p
+WHERE p.ya_orders_id IS NOT NULL
 """
 
 
@@ -349,14 +466,7 @@ def build_payment_aggregates_query(
         sub_where = " AND ".join(sub_conditions)
         extra_conditions.append(f"EXISTS (SELECT 1 FROM e_com.ya_orders o2 WHERE {sub_where})")
 
-    # Алиас p нужен для подзапроса выше
-    base = _PAYMENT_AGGREGATES_SELECT.replace(
-        "FROM e_com.ya_payments_reports",
-        "FROM e_com.ya_payments_reports p",
-    ).replace(
-        "WHERE ya_orders_id IS NOT NULL",
-        "WHERE p.ya_orders_id IS NOT NULL",
-    )
+    base = _PAYMENT_AGGREGATES_SELECT
 
     if extra_conditions:
         base += "  AND " + "\n  AND ".join(extra_conditions) + "\n"

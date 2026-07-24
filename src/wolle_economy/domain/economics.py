@@ -11,7 +11,8 @@
                         НЕ прибавлять к прибыли — иначе двойной счёт.
 - promo_discounts     = наши расходы на промо из баланса баллов (отрицательная сумма)
                         Вычитаются из дохода отдельно (settlement через баланс баллов)
-- our_costs           = base_price + ff_fee + socket_adapter (за весь заказ)
+- our_costs           = base_price + ff_fee + socket_adapter + custom_delivery
+                        (за доставленное количество)
 - expected_profit     = expected_payout - our_costs (без учёта промо)
 - profit              = expected_payout + promo_discounts - our_costs (с учётом промо)
 - fact_commissions    = реальные удержания ЯМ из платёжного отчёта ≈ market_services
@@ -60,11 +61,11 @@ def _compute_base_totals(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
     )
     df["uses_fact_purchase_price"] = spf > 0
 
-    # Доставка из Китая — наш расход только для CN-магазинов (location = 'CN').
-    # Для RU-магазинов markup_custom_delivery_fee = ЯМ-доставка, уже удержана в market_services.
-    is_cn = df.get("seller_location", pd.Series("RU", index=df.index)) == "CN"
-    cdn = pd.to_numeric(df.get("custom_delivery_fee", pd.Series(0.0, index=df.index)), errors="coerce").fillna(0)
-    df["custom_delivery_fee_total"] = np.where(is_cn, cdn * q, 0.0)
+    # Фиксированная доставка — наш расход для любого магазина.
+    cdn = pd.to_numeric(
+        df.get("custom_delivery_fee", pd.Series(0.0, index=df.index)), errors="coerce"
+    ).fillna(0)
+    df["custom_delivery_fee_total"] = cdn * q
 
     margin = df["margin_percent"].fillna(0).astype(float)
     df["our_margin"] = df["base_price_total"] * margin / 100
@@ -85,7 +86,9 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
     # Нельзя использовать customer_refund_amount — он содержит только buyer_price без субсидии,
     # а субсидия возврата списывается отдельно через "Возврат баллов за скидку Маркета".
     # Для обычных заказов returned_sell_price = 0, поэтому изменений нет.
-    returned_sell = df["returned_sell_price"].fillna(0) if "returned_sell_price" in df.columns else 0.0
+    returned_sell = (
+        df["returned_sell_price"].fillna(0) if "returned_sell_price" in df.columns else 0.0
+    )
     df["sell_price"] = df["sell_price"] - returned_sell
 
     # Ожидаемая выплата = цена продажи минус комиссии ЯМ
@@ -93,10 +96,28 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
         lower=0
     )
 
-    # Расчётные комиссии (только commission_* поля; markup_* — наша наценка)
-    df["calc_commissions"] = (
-        df["calc_category_fee"] + df["calc_transfer_fee"] + df["calc_delivery_fee"]
-    )
+    # Полный план комиссий из снимка позиции заказа. Все исходные суммы
+    # рассчитаны за единицу товара, поэтому для строки показываем итог × quantity.
+    def planned_total(column: str) -> pd.Series:
+        values = pd.to_numeric(
+            df.get(column, pd.Series(0.0, index=df.index)),
+            errors="coerce",
+        ).fillna(0)
+        return values * q
+
+    df["calc_category_fee_total"] = planned_total("calc_category_fee")
+    df["calc_transfer_fee_total"] = planned_total("calc_transfer_fee")
+    df["calc_delivery_fee_total"] = planned_total("calc_delivery_fee")
+    df["calc_accepting_payment_fee_total"] = planned_total("calc_accepting_payment_fee")
+    df["calc_order_processing_fee_total"] = planned_total("calc_order_processing_fee")
+    planned_columns = [
+        "calc_category_fee_total",
+        "calc_transfer_fee_total",
+        "calc_delivery_fee_total",
+        "calc_accepting_payment_fee_total",
+        "calc_order_processing_fee_total",
+    ]
+    df["calc_commissions"] = df[planned_columns].sum(axis=1)
 
     # Субсидия ЯМ — СПРАВОЧНО, уже включена в sell_price, не прибавлять к прибыли
     df["bonus_points"] = df["tr_bonuses"].fillna(0)
@@ -107,8 +128,65 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
     df["promo_discounts"] = df["promo_discounts"].fillna(0)
 
     if "fact_commissions" not in df.columns:
-        df["fact_commissions"] = 0.0
-    df["fact_commissions"] = df["fact_commissions"].fillna(0)
+        fact_commissions_raw = pd.Series(np.nan, index=df.index)
+    else:
+        fact_commissions_raw = pd.to_numeric(df["fact_commissions"], errors="coerce")
+
+    if "fact_commissions_available" in df.columns:
+        fact_available = df["fact_commissions_available"].fillna(False).astype(bool)
+    else:
+        fact_available = fact_commissions_raw.notna()
+    df["fact_commissions_available"] = fact_available
+    df["fact_commissions"] = fact_commissions_raw.fillna(0)
+
+    details_complete = (
+        df.get(
+            "fact_commission_details_complete",
+            pd.Series(False, index=df.index),
+        )
+        .fillna(False)
+        .astype(bool)
+    )
+    order_items_count = pd.to_numeric(
+        df.get("order_items_count", pd.Series(1, index=df.index)),
+        errors="coerce",
+    ).fillna(1)
+    # Факт агрегирован на заказ. Для multi-item заказа его нельзя сравнивать
+    # с планом одной позиции без произвольного распределения между товарами.
+    details_complete &= order_items_count.eq(1)
+    df["fact_commission_details_complete"] = details_complete
+
+    fact_plan_pairs = {
+        "category_fee_diff": ("fact_category_fee", "calc_category_fee_total"),
+        "transfer_fee_diff": ("fact_transfer_fee", "calc_transfer_fee_total"),
+        "yandex_delivery_fee_diff": ("fact_delivery_fee", "calc_delivery_fee_total"),
+        "accepting_payment_fee_diff": (
+            "fact_accepting_payment_fee",
+            "calc_accepting_payment_fee_total",
+        ),
+        "order_processing_fee_diff": (
+            "fact_order_processing_fee",
+            "calc_order_processing_fee_total",
+        ),
+    }
+    for diff_column, (fact_column, plan_column) in fact_plan_pairs.items():
+        fact_values = pd.to_numeric(
+            df.get(fact_column, pd.Series(np.nan, index=df.index)),
+            errors="coerce",
+        )
+        df[fact_column] = fact_values
+        df[diff_column] = (fact_values - df[plan_column]).where(details_complete)
+
+    for column in ("fact_other_fees", "fact_unclassified_fees"):
+        df[column] = pd.to_numeric(
+            df.get(column, pd.Series(np.nan, index=df.index)),
+            errors="coerce",
+        )
+
+    total_comparison_available = fact_available & order_items_count.eq(1)
+    df["commissions_diff"] = (df["fact_commissions"] - df["calc_commissions"]).where(
+        total_comparison_available
+    )
 
     return df
 
@@ -222,18 +300,22 @@ def calc_economics(df: pd.DataFrame) -> pd.DataFrame:
     df = _compute_payouts(df, q)
 
     spf = df["supplier_price_fact"]
-    effective_purchase_delivered = np.where(
-        spf > 0,
-        spf * delivered_q,
-        df["base_price"] * delivered_q,
+    effective_purchase_delivered = pd.Series(
+        np.where(
+            spf > 0,
+            spf * delivered_q,
+            df["base_price"] * delivered_q,
+        ),
+        index=df.index,
     )
-    is_cn = df.get("seller_location", pd.Series("RU", index=df.index)) == "CN"
-    cdn = pd.to_numeric(df.get("custom_delivery_fee", pd.Series(0.0, index=df.index)), errors="coerce").fillna(0)
+    cdn = pd.to_numeric(
+        df.get("custom_delivery_fee", pd.Series(0.0, index=df.index)), errors="coerce"
+    ).fillna(0)
     our_costs = (
         effective_purchase_delivered
         + df["ff_fee"] * delivered_q
         + df["socket_adapter_fee"] * delivered_q
-        + np.where(is_cn, cdn * delivered_q, 0.0)
+        + cdn * delivered_q
     )
     df["our_costs"] = our_costs
 

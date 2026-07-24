@@ -144,6 +144,17 @@ class TestComputeBaseTotals:
 
         assert result["socket_adapter_total"].iloc[0] == 150.0
 
+    def test_custom_delivery_multiplied_for_ru_seller(self):
+        df = make_orders(
+            seller_location="RU",
+            custom_delivery_fee=1090.0,
+            quantity=2,
+        )
+        q = df["quantity"].fillna(1)
+        result = _compute_base_totals(df, q)
+
+        assert result["custom_delivery_fee_total"].iloc[0] == pytest.approx(2180.0)
+
 
 # ===========================================================================
 # _compute_payouts
@@ -201,6 +212,96 @@ class TestComputePayouts:
 
         # 150 + 50 + 80 = 280
         assert result["calc_commissions"].iloc[0] == pytest.approx(280.0)
+
+    def test_calc_commissions_include_fixed_fees_and_quantity(self):
+        df = make_orders(
+            quantity=2,
+            calc_category_fee=100.0,
+            calc_transfer_fee=10.0,
+            calc_delivery_fee=20.0,
+            calc_accepting_payment_fee=1.0,
+            calc_order_processing_fee=5.0,
+        )
+        q = df["quantity"].fillna(1)
+        result = _compute_payouts(df, q)
+
+        assert result["calc_category_fee_total"].iloc[0] == pytest.approx(200.0)
+        assert result["calc_transfer_fee_total"].iloc[0] == pytest.approx(20.0)
+        assert result["calc_delivery_fee_total"].iloc[0] == pytest.approx(40.0)
+        assert result["calc_accepting_payment_fee_total"].iloc[0] == pytest.approx(2.0)
+        assert result["calc_order_processing_fee_total"].iloc[0] == pytest.approx(10.0)
+        assert result["calc_commissions"].iloc[0] == pytest.approx(272.0)
+
+    def test_commission_plan_fact_diffs_when_details_complete(self):
+        df = make_orders(
+            quantity=2,
+            calc_category_fee=100.0,
+            calc_transfer_fee=10.0,
+            calc_delivery_fee=20.0,
+            calc_accepting_payment_fee=1.0,
+            calc_order_processing_fee=5.0,
+            fact_commissions=285.0,
+            fact_commissions_available=True,
+            fact_commission_details_complete=True,
+            fact_category_fee=205.0,
+            fact_transfer_fee=22.0,
+            fact_delivery_fee=38.0,
+            fact_accepting_payment_fee=2.0,
+            fact_order_processing_fee=12.0,
+            fact_other_fees=6.0,
+            fact_unclassified_fees=0.0,
+        )
+        q = df["quantity"].fillna(1)
+        result = _compute_payouts(df, q)
+
+        assert result["category_fee_diff"].iloc[0] == pytest.approx(5.0)
+        assert result["transfer_fee_diff"].iloc[0] == pytest.approx(2.0)
+        assert result["yandex_delivery_fee_diff"].iloc[0] == pytest.approx(-2.0)
+        assert result["accepting_payment_fee_diff"].iloc[0] == pytest.approx(0.0)
+        assert result["order_processing_fee_diff"].iloc[0] == pytest.approx(2.0)
+        assert result["commissions_diff"].iloc[0] == pytest.approx(13.0)
+
+    def test_commission_component_diffs_are_nan_when_fact_is_unclassified(self):
+        df = make_orders(
+            calc_accepting_payment_fee=1.0,
+            calc_order_processing_fee=5.0,
+            fact_commissions=300.0,
+            fact_commissions_available=True,
+            fact_commission_details_complete=False,
+            fact_unclassified_fees=300.0,
+        )
+        q = df["quantity"].fillna(1)
+        result = _compute_payouts(df, q)
+
+        assert math.isnan(result["fact_category_fee"].iloc[0])
+        assert math.isnan(result["category_fee_diff"].iloc[0])
+        assert result["fact_unclassified_fees"].iloc[0] == pytest.approx(300.0)
+        assert result["commissions_diff"].iloc[0] == pytest.approx(14.0)
+
+    def test_component_diffs_are_nan_for_multi_item_order(self):
+        df = make_orders(
+            order_items_count=2,
+            fact_commissions=285.0,
+            fact_commissions_available=True,
+            fact_commission_details_complete=True,
+            fact_category_fee=205.0,
+        )
+        q = df["quantity"].fillna(1)
+        result = _compute_payouts(df, q)
+
+        assert result["fact_commission_details_complete"].iloc[0] == False  # noqa: E712
+        assert result["fact_category_fee"].iloc[0] == pytest.approx(205.0)
+        assert math.isnan(result["category_fee_diff"].iloc[0])
+        # Общие суммы видны отдельно, но их дельта с планом одной позиции некорректна.
+        assert math.isnan(result["commissions_diff"].iloc[0])
+
+    def test_total_commission_diff_is_nan_without_fact(self):
+        df = make_orders(fact_commissions=None)
+        q = df["quantity"].fillna(1)
+        result = _compute_payouts(df, q)
+
+        assert result["fact_commissions_available"].iloc[0] == False  # noqa: E712
+        assert math.isnan(result["commissions_diff"].iloc[0])
 
     def test_bonus_points_from_tr_bonuses(self):
         df = make_orders(tr_bonuses=75.0)
@@ -572,6 +673,22 @@ class TestCalcEconomicsIntegration:
         assert result["is_delivered"].iloc[0] == True  # noqa: E712
         assert result["is_loss"].iloc[0] == False  # noqa: E712
 
+    def test_full_pipeline_custom_delivery_is_ru_cost(self):
+        df = make_orders(
+            seller_location="RU",
+            custom_delivery_fee=1090.0,
+            quantity=2,
+            sell_price=5000.0,
+            market_services=500.0,
+        )
+
+        result = calc_economics(df)
+
+        # (закупка 1000 + упаковка 100 + доставка 1090) × 2
+        assert result["custom_delivery_fee_total"].iloc[0] == pytest.approx(2180.0)
+        assert result["our_costs"].iloc[0] == pytest.approx(4380.0)
+        assert result["profit"].iloc[0] == pytest.approx(120.0)
+
     def test_full_pipeline_cancelled_before_ship(self, cancelled_before_ship_order):
         result = calc_economics(cancelled_before_ship_order)
 
@@ -756,7 +873,7 @@ class TestPartialReturn:
             buyer_price=1000.0,
             subsidy=200.0,
             returned_sell_price=1200.0,  # buyer_price + subsidy возврата
-            customer_refund=-1000.0,     # только buyer_price (без субсидии)
+            customer_refund=-1000.0,  # только buyer_price (без субсидии)
         )
         q = df["quantity"].fillna(1)
         result = _compute_payouts(df, q)
