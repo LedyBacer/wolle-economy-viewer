@@ -99,7 +99,13 @@ SELECT
     COALESCE(
         -- tr.status='Частично возвращён' перебивает mr.status:
         -- margin_report может показывать 'Доставлен' даже при частичном возврате
-        CASE WHEN tr.status = 'Частично возвращён' THEN 'Частично возвращён' END,
+        CASE
+            WHEN tr.status IN (
+                'Частично возвращён',
+                'Возврат оформлен',
+                'Невыкуп передан вам'
+            ) THEN tr.status
+        END,
         mr.status,
         CASE o.status
             WHEN 'DELIVERED'  THEN 'Доставлен'
@@ -255,7 +261,35 @@ def build_order_items_query(
 # Агрегаты платежей — фильтруется по тому же набору заказов через подзапрос
 # ---------------------------------------------------------------------------
 _PAYMENT_AGGREGATES_SELECT = """
-WITH classified_payments AS (
+WITH ranked_payments AS (
+    SELECT
+        p.*,
+        ROW_NUMBER() OVER (
+            PARTITION BY
+                p.platform_sellers_id,
+                p.order_id,
+                p.transaction_type,
+                p.transaction_date,
+                p.claim_id_date,
+                p.order_type,
+                p.offer_id,
+                p.services_act_id,
+                p.services_act_date,
+                p.item_name_or_service_name,
+                p.quantity,
+                p.transaction_amount,
+                p.transaction_source,
+                p.payment_status,
+                p.payment_date,
+                p.payment_id,
+                p.payment_or_withheld_amount
+            ORDER BY p.id
+        ) AS duplicate_rank
+    FROM e_com.ya_payments_reports p
+    WHERE p.ya_orders_id IS NOT NULL
+    /* PAYMENT_FILTERS */
+),
+classified_payments AS (
     SELECT
         p.*,
         (
@@ -289,8 +323,8 @@ WITH classified_payments AS (
                 THEN 'delivery'
             ELSE 'other'
         END AS fact_commission_kind
-    FROM e_com.ya_payments_reports p
-    WHERE p.ya_orders_id IS NOT NULL
+    FROM ranked_payments p
+    WHERE p.duplicate_rank = 1
 )
 SELECT
     ya_orders_id,
@@ -421,8 +455,20 @@ SELECT
     SUM(CASE
         WHEN transaction_source = 'Скидка за участие в совместных акциях'
           OR (transaction_source IS NULL AND payment_status = 'Списание')
+          OR (transaction_source IS NULL AND payment_status = 'Возврат списания')
         THEN transaction_amount ELSE 0
-    END) AS promo_discounts
+    END) AS promo_discounts,
+
+    -- Возврат оплаты и субсидии. Используется как fallback,
+    -- если отчёт «Транзакции по заказам и товарам» не успел обновить статус.
+    SUM(CASE
+        WHEN payment_status = 'Возврат' AND transaction_amount < 0
+        THEN -transaction_amount ELSE 0
+    END) AS payment_refund_total,
+    MAX(CASE
+        WHEN payment_status = 'Возврат' AND transaction_amount < 0
+        THEN payment_date ELSE NULL
+    END) AS payment_refund_date
 
 FROM classified_payments p
 WHERE p.ya_orders_id IS NOT NULL
@@ -466,10 +512,10 @@ def build_payment_aggregates_query(
         sub_where = " AND ".join(sub_conditions)
         extra_conditions.append(f"EXISTS (SELECT 1 FROM e_com.ya_orders o2 WHERE {sub_where})")
 
-    base = _PAYMENT_AGGREGATES_SELECT
-
+    ranked_filters = ""
     if extra_conditions:
-        base += "  AND " + "\n  AND ".join(extra_conditions) + "\n"
+        ranked_filters = "  AND " + "\n  AND ".join(extra_conditions)
+    base = _PAYMENT_AGGREGATES_SELECT.replace("    /* PAYMENT_FILTERS */", ranked_filters)
 
     base += "GROUP BY p.ya_orders_id"
     sql = text(base)

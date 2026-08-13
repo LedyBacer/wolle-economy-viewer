@@ -26,6 +26,7 @@ from wolle_economy.enums import (
     CANCELLED_STATUSES,
     PAID_STATUSES,
     RETURNED_STATUSES,
+    FulfillmentStatus,
 )
 
 
@@ -36,6 +37,40 @@ def merge_with_payments(orders_df: pd.DataFrame, payments_df: pd.DataFrame) -> p
         on="ya_order_id",
         how="left",
     )
+
+
+def _apply_payment_refund_fallback(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
+    """Распознаёт полный возврат по платёжному отчёту.
+
+    Это fallback для однопозиционных заказов, когда отчёт по товарам
+    ещё содержит старый статус, но платёжный отчёт уже содержит полный
+    возврат оплаты покупателя и субсидии Маркета.
+    """
+    refund_total = pd.to_numeric(
+        df.get("payment_refund_total", pd.Series(0.0, index=df.index)),
+        errors="coerce",
+    ).fillna(0)
+    gross_sell = pd.to_numeric(df.get("sell_price"), errors="coerce")
+    fallback_sell = (df["buyer_price"].fillna(0) + df["subsidy"].fillna(0)) * q
+    gross_sell = gross_sell.fillna(fallback_sell)
+    item_count = pd.to_numeric(
+        df.get("order_items_count", pd.Series(1, index=df.index)), errors="coerce"
+    ).fillna(1)
+    transaction_refund = pd.to_numeric(
+        df.get("returned_sell_price", pd.Series(0.0, index=df.index)), errors="coerce"
+    ).fillna(0)
+
+    full_refund = (
+        item_count.eq(1)
+        & gross_sell.gt(0)
+        & refund_total.ge(gross_sell.sub(0.01))
+        & transaction_refund.eq(0)
+    )
+    df["payment_refund_fallback"] = full_refund
+    df.loc[full_refund, "returned_sell_price"] = gross_sell[full_refund]
+    df.loc[full_refund, "tr_delivered_quantity"] = 0
+    df.loc[full_refund, "fulfillment_status"] = FulfillmentStatus.RETURN_CREATED
+    return df
 
 
 def _compute_base_totals(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
@@ -222,14 +257,41 @@ def _compute_actual_profit(df: pd.DataFrame, our_costs: pd.Series) -> pd.DataFra
         if "last_payment_date" in df.columns
         else pd.Series(pd.NA, index=df.index)
     )
+    refund_raw = (
+        df["payment_refund_date"]
+        if "payment_refund_date" in df.columns
+        else pd.Series(pd.NA, index=df.index)
+    )
     tr_date = pd.to_datetime(tr_raw, errors="coerce", utc=True)
     pay_date = pd.to_datetime(pay_raw, errors="coerce", utc=True)
-    df["last_payment_date"] = tr_date.fillna(pay_date)
+    refund_date = pd.to_datetime(refund_raw, errors="coerce", utc=True)
+    df["last_payment_date"] = tr_date.fillna(pay_date).fillna(refund_date)
 
     has_payment = df["last_payment_date"].notna() | is_transferred
     is_cancelled_before = df["fulfillment_status"].isin(CANCELLED_BEFORE_SHIP)
 
-    actual_full = df["expected_payout"] - our_costs
+    # Для факта приоритетны реальные удержания из платёжного отчёта.
+    # market_services остаётся fallback для заказов без такого отчёта.
+    fact_available = df.get(
+        "fact_commissions_available", pd.Series(False, index=df.index)
+    ).fillna(False).astype(bool)
+    fact_commissions = pd.to_numeric(
+        df.get("fact_commissions", pd.Series(0.0, index=df.index)), errors="coerce"
+    ).fillna(0)
+    market_services = pd.to_numeric(
+        df.get("market_services", pd.Series(0.0, index=df.index)), errors="coerce"
+    ).fillna(0)
+    actual_market_services = pd.Series(
+        np.where(fact_available, fact_commissions, market_services),
+        index=df.index,
+    )
+    promo = pd.to_numeric(
+        df.get("promo_discounts", pd.Series(0.0, index=df.index)), errors="coerce"
+    ).fillna(0)
+    compensations = pd.to_numeric(
+        df.get("compensations", pd.Series(0.0, index=df.index)), errors="coerce"
+    ).fillna(0)
+    actual_full = df["sell_price"].fillna(0) - actual_market_services + promo + compensations - our_costs
 
     # Отменён до отгрузки: расходы не понесены, учитываем только штрафы/компенсации
     cancelled_result = (
@@ -287,6 +349,7 @@ def calc_economics(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
     q = df["quantity"].fillna(1)
+    df = _apply_payment_refund_fallback(df, q)
 
     # При частичном возврате затраты считаем только на доставленные единицы:
     # покупная цена возвращённых штук не потеряна — товар вернулся на склад.

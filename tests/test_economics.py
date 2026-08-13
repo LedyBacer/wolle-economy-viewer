@@ -705,6 +705,48 @@ class TestCalcEconomicsIntegration:
         # Возврат оплачен (WITHHELD) → actual_profit = expected_payout - our_costs
         assert result["actual_profit"].iloc[0] == pytest.approx(120.0)
 
+    def test_payment_report_full_refund_overrides_stale_shipped_status(self):
+        df = make_orders(
+            fulfillment_status="Передан в доставку",
+            payment_status="Будет переведён",
+            sell_price=9291.0,
+            market_services=0.12,
+            buyer_price=6332.0,
+            subsidy=2959.0,
+            payment_refund_total=9291.0,
+            payment_refund_date="2026-05-01",
+            returned_sell_price=0.0,
+            tr_delivered_quantity=1,
+            fact_commissions=1130.17,
+            fact_commissions_available=True,
+            promo_discounts=-1016.38,
+            compensations=0.0,
+            last_payment_date=None,
+            tr_customer_payment_date=None,
+        )
+
+        result = calc_economics(df)
+
+        assert result["payment_refund_fallback"].iloc[0] == True  # noqa: E712
+        assert result["fulfillment_status"].iloc[0] == "Возврат оформлен"
+        assert result["is_returned"].iloc[0] == True  # noqa: E712
+        assert result["is_delivered"].iloc[0] == False  # noqa: E712
+        assert result["sell_price"].iloc[0] == 0.0
+        assert result["our_costs"].iloc[0] == 0.0
+        assert result["actual_profit"].iloc[0] == pytest.approx(-2146.55)
+
+    def test_payment_refund_fallback_is_not_used_for_multi_item_order(self):
+        df = make_orders(
+            order_items_count=2,
+            payment_refund_total=1500.0,
+            returned_sell_price=0.0,
+        )
+
+        result = calc_economics(df)
+
+        assert result["payment_refund_fallback"].iloc[0] == False  # noqa: E712
+        assert result["sell_price"].iloc[0] == 1500.0
+
     def test_full_pipeline_with_fact_purchase_price(self, fact_purchase_order):
         """
         Проверка каскада фактической закупочной цены через всю пайплайн.

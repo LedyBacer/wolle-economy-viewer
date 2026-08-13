@@ -22,6 +22,8 @@ class FulfillmentStatus(StrEnum):
     FULL_RETURN = "Полный возврат принят на складе"
     PARTIAL_BUYOUT_REFUSED = "Частичный невыкуп принят на складе"
     CANCELLED_AT_DELIVERY = "Отменен при доставке"
+    RETURN_CREATED = "Возврат оформлен"
+    UNREDEEMED_TRANSFERRED = "Невыкуп передан вам"
     # Частичный возврат: часть штук доставлена, часть возвращена
     # Определяется на основе ya_order_transactions_report (несколько строк на позицию)
     PARTIALLY_RETURNED = "Частично возвращён"
@@ -55,6 +57,8 @@ RETURNED_STATUSES: frozenset[str] = frozenset(
         FulfillmentStatus.FULL_RETURN,
         FulfillmentStatus.PARTIAL_BUYOUT_REFUSED,
         FulfillmentStatus.CANCELLED_AT_DELIVERY,
+        FulfillmentStatus.RETURN_CREATED,
+        FulfillmentStatus.UNREDEEMED_TRANSFERRED,
         FulfillmentStatus.PARTIALLY_RETURNED,
     }
 )

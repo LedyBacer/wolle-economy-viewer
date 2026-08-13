@@ -48,6 +48,9 @@ def test_yandex_related_queries_are_limited_to_requested_order() -> None:
     )
 
     assert "CAST(o2.order_id AS TEXT) = :order_id" in str(payments_sql)
+    assert str(payments_sql).index("CAST(o2.order_id AS TEXT) = :order_id") < str(
+        payments_sql
+    ).index("classified_payments AS")
     assert payments_params == {"seller_ids": [1], "order_id": "12345"}
     assert "CAST(o.order_id AS TEXT) = :order_id" in str(supplier_sql)
     assert "CAST(yai.offer_id AS TEXT) = :offer_id" in str(supplier_sql)
@@ -79,3 +82,8 @@ def test_payment_query_classifies_fact_commission_details() -> None:
     assert "'Начисления за доставку'" in query
     assert "AS fact_unclassified_fees" in query
     assert "AS fact_commission_details_complete" in query
+    assert "ROW_NUMBER() OVER" in query
+    assert "p.duplicate_rank = 1" in query
+    assert "AS payment_refund_total" in query
+    assert "AS payment_refund_date" in query
+    assert "payment_status = 'Возврат списания'" in query
