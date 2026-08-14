@@ -167,10 +167,59 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
     else:
         fact_commissions_raw = pd.to_numeric(df["fact_commissions"], errors="coerce")
 
+    # Итоговая разбивка united-orders учитывает поздние корректировки и
+    # компенсации Яндекса. Она приоритетнее реконструкции по платёжному реестру,
+    # где одинаковая услуга может встречаться начислением и сторно отдельно.
+    report_details = df.get(
+        "report_service_details",
+        pd.Series(None, index=df.index, dtype=object),
+    )
+    report_total = pd.to_numeric(
+        df.get("market_services", pd.Series(np.nan, index=df.index)),
+        errors="coerce",
+    )
+    report_available = report_details.map(lambda value: isinstance(value, dict)) & report_total.notna()
+
+    def report_component(key: str) -> pd.Series:
+        return pd.to_numeric(
+            report_details.map(
+                lambda value: value.get(key) if isinstance(value, dict) else np.nan
+            ),
+            errors="coerce",
+        ).fillna(0)
+
+    report_components = {
+        key: report_component(key)
+        for key in (
+            "placement",
+            "warehouse_processing",
+            "loyalty",
+            "boost",
+            "installment",
+            "delivery",
+            "middle_mile_delivery",
+            "express_delivery",
+            "cross_border_delivery",
+            "accepting_payment",
+            "transfer",
+            "pickup",
+            "order_processing",
+            "sorting_center_processing",
+            "warehouse_order_processing",
+            "storage",
+            "return_delivery",
+            "sales_reward",
+        )
+    }
+    report_components_total = sum(report_components.values(), pd.Series(0.0, index=df.index))
+    report_complete = report_available & report_components_total.sub(report_total).abs().le(0.011)
+    fact_commissions_raw = fact_commissions_raw.where(~report_available, report_total)
+
     if "fact_commissions_available" in df.columns:
         fact_available = df["fact_commissions_available"].fillna(False).astype(bool)
     else:
         fact_available = fact_commissions_raw.notna()
+    fact_available |= report_available
     df["fact_commissions_available"] = fact_available
     df["fact_commissions"] = fact_commissions_raw.fillna(0)
 
@@ -182,6 +231,48 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
         .fillna(False)
         .astype(bool)
     )
+    details_complete = details_complete.where(~report_available, report_complete)
+
+    report_fact_components = {
+        "fact_category_fee": report_components["placement"],
+        "fact_transfer_fee": report_components["transfer"],
+        "fact_delivery_fee": (
+            report_components["delivery"]
+            + report_components["middle_mile_delivery"]
+            + report_components["express_delivery"]
+            + report_components["cross_border_delivery"]
+        ),
+        "fact_accepting_payment_fee": report_components["accepting_payment"],
+        "fact_order_processing_fee": (
+            report_components["order_processing"]
+            + report_components["sorting_center_processing"]
+            + report_components["warehouse_order_processing"]
+        ),
+        "fact_other_fees": sum(
+            (
+                report_components[key]
+                for key in (
+                    "warehouse_processing",
+                    "loyalty",
+                    "boost",
+                    "installment",
+                    "pickup",
+                    "storage",
+                    "return_delivery",
+                    "sales_reward",
+                )
+            ),
+            pd.Series(0.0, index=df.index),
+        ),
+        "fact_unclassified_fees": pd.Series(0.0, index=df.index),
+    }
+    for column, report_values in report_fact_components.items():
+        existing = pd.to_numeric(
+            df.get(column, pd.Series(np.nan, index=df.index)),
+            errors="coerce",
+        )
+        df[column] = existing.where(~report_available, report_values)
+
     order_items_count = pd.to_numeric(
         df.get("order_items_count", pd.Series(1, index=df.index)),
         errors="coerce",

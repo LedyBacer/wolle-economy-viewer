@@ -261,6 +261,47 @@ class TestComputePayouts:
         assert result["order_processing_fee_diff"].iloc[0] == pytest.approx(2.0)
         assert result["commissions_diff"].iloc[0] == pytest.approx(13.0)
 
+    def test_united_orders_details_override_payment_ledger(self):
+        df = make_orders(
+            market_services=886.93,
+            fact_commissions=923.00,
+            fact_commissions_available=True,
+            fact_commission_details_complete=True,
+            fact_category_fee=36.07,
+            fact_accepting_payment_fee=0.24,
+            report_service_details={
+                "placement": "5.42",
+                "warehouse_processing": "0.00",
+                "loyalty": "0.00",
+                "boost": "9.25",
+                "installment": "0.00",
+                "delivery": "0.00",
+                "middle_mile_delivery": "0.00",
+                "express_delivery": "0.00",
+                "cross_border_delivery": "872.14",
+                "accepting_payment": "0.12",
+                "transfer": "0.00",
+                "pickup": "0.00",
+                "order_processing": "0.00",
+                "sorting_center_processing": "0.00",
+                "warehouse_order_processing": "0.00",
+                "storage": "0.00",
+                "return_delivery": "0.00",
+                "sales_reward": "0.00",
+            },
+        )
+        q = df["quantity"].fillna(1)
+
+        result = _compute_payouts(df, q)
+
+        assert result["fact_commissions"].iloc[0] == pytest.approx(886.93)
+        assert result["fact_category_fee"].iloc[0] == pytest.approx(5.42)
+        assert result["fact_delivery_fee"].iloc[0] == pytest.approx(872.14)
+        assert result["fact_accepting_payment_fee"].iloc[0] == pytest.approx(0.12)
+        assert result["fact_other_fees"].iloc[0] == pytest.approx(9.25)
+        assert result["fact_unclassified_fees"].iloc[0] == pytest.approx(0.0)
+        assert result["fact_commission_details_complete"].iloc[0] == True  # noqa: E712
+
     def test_commission_component_diffs_are_nan_when_fact_is_unclassified(self):
         df = make_orders(
             calc_accepting_payment_fee=1.0,

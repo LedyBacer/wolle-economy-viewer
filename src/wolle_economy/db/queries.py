@@ -136,6 +136,7 @@ SELECT
     -- Данные из отчёта о марже (на уровне заказа)
     mr.sell_price                 AS sell_price,
     mr.market_services            AS market_services,
+    mr.service_details            AS report_service_details,
 
     -- Скидки и баллы из отчёта о транзакциях (на уровне позиции)
     COALESCE(tr.bonuses, 0)                AS tr_bonuses,

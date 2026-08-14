@@ -70,6 +70,8 @@ def test_yandex_order_query_selects_fixed_fee_snapshots() -> None:
     assert "markup_yandex_order_processing_fee_amount" in query
     assert "AS calc_order_processing_fee" in query
     assert "AS order_items_count" in query
+    assert "mr.service_details" in query
+    assert "AS report_service_details" in query
 
 
 def test_payment_query_classifies_fact_commission_details() -> None:
