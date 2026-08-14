@@ -272,7 +272,13 @@ WITH ranked_payments AS (
                 p.transaction_date,
                 p.claim_id_date,
                 p.order_type,
-                p.offer_id,
+                CASE
+                    -- Excel иногда сериализует числовой Offer ID как 772970.0.
+                    -- Для дедупликации это тот же идентификатор, что и 772970.
+                    WHEN BTRIM(p.offer_id) ~ '^[+-]?[0-9]+[.]0+$'
+                    THEN REGEXP_REPLACE(BTRIM(p.offer_id), '[.]0+$', '')
+                    ELSE BTRIM(p.offer_id)
+                END,
                 p.services_act_id,
                 p.services_act_date,
                 p.item_name_or_service_name,

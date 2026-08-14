@@ -84,6 +84,8 @@ def test_payment_query_classifies_fact_commission_details() -> None:
     assert "AS fact_commission_details_complete" in query
     assert "ROW_NUMBER() OVER" in query
     assert "p.duplicate_rank = 1" in query
+    assert "BTRIM(p.offer_id) ~ '^[+-]?[0-9]+[.]0+$'" in query
+    assert "REGEXP_REPLACE(BTRIM(p.offer_id), '[.]0+$', '')" in query
     assert "AS payment_refund_total" in query
     assert "AS payment_refund_date" in query
     assert "payment_status = 'Возврат списания'" in query
