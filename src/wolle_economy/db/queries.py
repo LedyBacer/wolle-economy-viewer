@@ -756,6 +756,7 @@ SELECT
     -- Доставка
     o.delivery_cost               AS delivery_cost,      -- стоимость доставки, снятая с покупателя
     o.cdek_delivery_cost          AS cdek_delivery_cost,  -- фактическая стоимость доставки для нас
+    COALESCE(i.commission_cdek_insurance_amount, 0) AS cdek_insurance_amount,
 
     -- Бонусы покупателя (incentive): часть, оплаченная бонусами (спасибо и т.д.)
     (i.price - i.final_price)     AS incentive_amount,

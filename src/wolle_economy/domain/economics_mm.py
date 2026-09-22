@@ -9,7 +9,8 @@
 - incentive_amount  = price − final_price (часть, оплаченная бонусами покупателя)
 - vat_on_incentive  = incentive_amount × ставка НДС (по дате выплаты отчёта)
                       до 01.01.2026 → 20%, 01.01.2026–01.04.2026 → 22%, после → 0%
-- our_costs         = закупка + упаковка + переходник + доставка (для доставленных)
+- our_costs         = закупка + упаковка + переходник + доставка + страховка СДЭК
+                      (для доставленных)
                       или упаковка + return_delivery_cost (для возвратов)
 - profit            = expected_payout + promo_discounts − our_costs
 - profit_no_promo   = expected_payout − our_costs
@@ -150,8 +151,15 @@ def calc_mm_economics(df: pd.DataFrame) -> pd.DataFrame:
         df.get("cdek_delivery_cost", pd.Series(0.0, index=df.index)),
         errors="coerce",
     ).fillna(0)
+    cdek_insurance = pd.to_numeric(
+        df.get("cdek_insurance_amount", pd.Series(0.0, index=df.index)),
+        errors="coerce",
+    ).fillna(0)
+    df["cdek_insurance_amount"] = cdek_insurance
+    df["cdek_insurance_total"] = cdek_insurance * q
 
-    # Доставленные: закупка + упаковка + переходник + фактическая доставка СДЭК.
+    # Доставленные: закупка + упаковка + переходник + фактическая доставка
+    # СДЭК + расчётная страховка СДЭК. Страховка хранится за единицу товара.
     # Возвраты/невыкупы: товар вернулся → закупка не потеряна, но упаковка уже
     # использована и есть расходы на возврат. Переходник возвращается с товаром.
     # Отменённые до отгрузки: затрат нет.
@@ -166,6 +174,7 @@ def calc_mm_economics(df: pd.DataFrame) -> pd.DataFrame:
                 + df["ff_fee_total"]
                 + df["socket_adapter_total"]
                 + cdek_cost
+                + df["cdek_insurance_total"]
             ),
         ),
     )

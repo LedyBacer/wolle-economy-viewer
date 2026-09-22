@@ -53,6 +53,8 @@ for _col, _label in MM_COLUMN_LABELS.items():
         "cancellation_commission",
         "return_delivery_cost",
         "cdek_delivery_cost",
+        "cdek_insurance_amount",
+        "cdek_insurance_total",
         "delivery_cost",
         "incentive_amount",
         "vat_on_incentive",

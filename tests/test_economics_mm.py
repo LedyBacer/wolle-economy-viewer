@@ -49,6 +49,7 @@ _MM_BASE_ROW: dict = {
     "bonus_from_mm": 0.0,
     "delivery_cost": 0.0,
     "cdek_delivery_cost": 0.0,
+    "cdek_insurance_amount": 0.0,
     "return_delivery_cost": 0.0,
     "supplier_price_fact": 0.0,
     "ff_fee": 50.0,
@@ -96,6 +97,12 @@ class TestMMDelivered:
         assert df["socket_adapter_total"].iloc[0] == pytest.approx(25.0)
         assert df["our_costs"].iloc[0] == pytest.approx(1085.0)
         assert df["profit"].iloc[0] == pytest.approx(575.0)
+
+    def test_cdek_insurance_is_included_in_delivered_costs(self):
+        df = calc_mm_economics(make_mm_orders(cdek_insurance_amount=15.0, quantity=2))
+
+        assert df["cdek_insurance_total"].iloc[0] == pytest.approx(30.0)
+        assert df["our_costs"].iloc[0] == pytest.approx(2130.0)
 
     def test_is_delivered(self):
         df = calc_mm_economics(make_mm_orders())
@@ -277,6 +284,11 @@ def test_mm_queries_load_packaging_and_adapter(query_builder) -> None:
 
 
 def test_packaging_and_adapter_are_in_default_table_and_export() -> None:
-    for column in ("ff_fee_total", "socket_adapter_total"):
+    for column in (
+        "ff_fee_total",
+        "socket_adapter_total",
+        "cdek_insurance_amount",
+        "cdek_insurance_total",
+    ):
         assert column in MM_DISPLAY_COLUMNS
         assert column in _MM_MAIN_COLUMNS
