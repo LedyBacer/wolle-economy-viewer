@@ -72,6 +72,9 @@ def test_yandex_order_query_selects_fixed_fee_snapshots() -> None:
     assert "AS order_items_count" in query
     assert "mr.service_details" in query
     assert "AS report_service_details" in query
+    assert "history.boost_percent" in query
+    assert "history.boost_amount" in query
+    assert "LEFT JOIN LATERAL" in query
 
 
 def test_payment_query_classifies_fact_commission_details() -> None:
@@ -83,6 +86,9 @@ def test_payment_query_classifies_fact_commission_details() -> None:
     assert "'Приём платежа'" in query
     assert "'Начисления за доставку'" in query
     assert "AS fact_unclassified_fees" in query
+    assert "AS fact_boost_service_fee" in query
+    assert "AS boost_wallet_spend" in query
+    assert "'Буст продаж, оплата за продажи'" in query
     assert "AS fact_commission_details_complete" in query
     assert "ROW_NUMBER() OVER" in query
     assert "p.duplicate_rank = 1" in query
@@ -90,4 +96,5 @@ def test_payment_query_classifies_fact_commission_details() -> None:
     assert "REGEXP_REPLACE(BTRIM(p.offer_id), '[.]0+$', '')" in query
     assert "AS payment_refund_total" in query
     assert "AS payment_refund_date" in query
-    assert "payment_status = 'Возврат списания'" in query
+    assert "payment_status IN ('Списание', 'Возврат списания')" in query
+    assert "payment_status = 'Возврат'" in query

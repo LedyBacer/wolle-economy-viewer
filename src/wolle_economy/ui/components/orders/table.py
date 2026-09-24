@@ -57,6 +57,7 @@ for _col, _label in COLUMN_LABELS.items():
         "margin_fact_pct",
         "margin_plan_on_cost_pct",
         "margin_fact_on_cost_pct",
+        "planned_boost_percent",
     }:
         _COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_PCT_FMT)
     elif _col in {
@@ -69,6 +70,9 @@ for _col, _label in COLUMN_LABELS.items():
         "our_margin",
         "min_sell_price_total",
         "expected_profit",
+        "calc_boost_fee_total",
+        "fact_boost_wallet_spend",
+        "fact_boost_service_fee",
         "sell_price",
         "bonus_points",
         "promo_discounts",

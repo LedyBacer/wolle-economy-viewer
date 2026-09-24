@@ -123,6 +123,8 @@ SELECT
     i.buyer_price                 AS buyer_price,
     COALESCE(i.subsidy, 0)        AS subsidy,
     i.final_price                 AS min_sell_price,
+    price_snapshot.boost_percent  AS planned_boost_percent,
+    price_snapshot.boost_amount   AS planned_boost_amount,
     i.margin_percent              AS margin_percent,
     COALESCE(ff.value, 0)         AS ff_fee,
     COALESCE(sa.value, 0)         AS socket_adapter_fee,
@@ -169,6 +171,17 @@ JOIN e_com.yandex_feed_items fi
     ON i.feed_item_id = fi.id
 JOIN e_com.unique_product_groups upg
     ON fi.unique_product_group_id = upg.id
+-- Только снимок расчёта, действовавший при создании заказа. Старым строкам
+-- без сохранённой детализации оставляем NULL, не подставляя текущие настройки.
+LEFT JOIN LATERAL (
+    SELECT history.boost_percent, history.boost_amount
+    FROM e_com.yandex_price_history history
+    WHERE history.feed_item_id = i.feed_item_id
+      AND history.start_date <= o.created_at
+      AND (history.end_date IS NULL OR o.created_at < history.end_date)
+    ORDER BY history.start_date DESC, history.id DESC
+    LIMIT 1
+) price_snapshot ON TRUE
 LEFT JOIN e_com.ya_order_margin_report mr
     ON o.id = mr.ya_orders_id
 -- Агрегируем транзакции по позиции: одна ya_order_items может иметь несколько строк,
@@ -320,6 +333,8 @@ classified_payments AS (
                 'Обработка заказа продавцом'
             )
                 THEN 'order_processing'
+            WHEN p.item_name_or_service_name = 'Буст продаж, оплата за продажи'
+                THEN 'boost'
             WHEN p.item_name_or_service_name IN (
                 'Начисления за доставку',
                 'Доставка (средняя миля)',
@@ -428,6 +443,16 @@ SELECT
             FALSE
         )
     THEN SUM(CASE
+        WHEN is_fact_commission AND fact_commission_kind = 'boost'
+        THEN -transaction_amount ELSE 0
+    END) END AS fact_boost_service_fee,
+    CASE WHEN
+        COALESCE(BOOL_OR(is_fact_commission), FALSE)
+        AND NOT COALESCE(
+            BOOL_OR(is_fact_commission AND fact_commission_kind = 'unclassified'),
+            FALSE
+        )
+    THEN SUM(CASE
         WHEN is_fact_commission AND fact_commission_kind = 'other'
         THEN -transaction_amount ELSE 0
     END) END AS fact_other_fees,
@@ -461,10 +486,20 @@ SELECT
     -- Результат ОТРИЦАТЕЛЬНЫЙ — это наши расходы (вычитаются из прибыли).
     SUM(CASE
         WHEN transaction_source = 'Скидка за участие в совместных акциях'
-          OR (transaction_source IS NULL AND payment_status = 'Списание')
-          OR (transaction_source IS NULL AND payment_status = 'Возврат списания')
+          OR (
+              payment_status IN ('Списание', 'Возврат списания')
+              AND item_name_or_service_name IS DISTINCT FROM 'Буст продаж, оплата за продажи'
+          )
         THEN transaction_amount ELSE 0
     END) AS promo_discounts,
+
+    -- В старом формате списание оплаты буста идёт с бонусного баланса.
+    -- Выделяем его отдельно от промо-скидок; знак суммы сохраняется.
+    SUM(CASE
+        WHEN payment_status IN ('Списание', 'Возврат списания')
+         AND item_name_or_service_name = 'Буст продаж, оплата за продажи'
+        THEN transaction_amount ELSE 0
+    END) AS boost_wallet_spend,
 
     -- Возврат оплаты и субсидии. Используется как fallback,
     -- если отчёт «Транзакции по заказам и товарам» не успел обновить статус.

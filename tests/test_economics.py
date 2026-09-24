@@ -298,7 +298,8 @@ class TestComputePayouts:
         assert result["fact_category_fee"].iloc[0] == pytest.approx(5.42)
         assert result["fact_delivery_fee"].iloc[0] == pytest.approx(872.14)
         assert result["fact_accepting_payment_fee"].iloc[0] == pytest.approx(0.12)
-        assert result["fact_other_fees"].iloc[0] == pytest.approx(9.25)
+        assert result["fact_boost_service_fee"].iloc[0] == pytest.approx(9.25)
+        assert result["fact_other_fees"].iloc[0] == pytest.approx(0.0)
         assert result["fact_unclassified_fees"].iloc[0] == pytest.approx(0.0)
         assert result["fact_commission_details_complete"].iloc[0] == True  # noqa: E712
 
@@ -396,6 +397,47 @@ class TestComputeProfits:
 
         # expected_payout=1220, our_costs=1100 (1000+100+0)
         assert result["expected_profit"].iloc[0] == pytest.approx(120.0)
+
+    def test_boost_is_separate_plan_and_fact_cost(self):
+        df = make_orders(
+            planned_boost_amount=30.0,
+            planned_boost_percent=5.0,
+            boost_wallet_spend=-40.0,
+            fact_boost_service_fee=2.0,
+            promo_discounts=-10.0,
+        )
+        df, our_costs = self._setup(df)
+        result = _compute_profits(df, our_costs)
+
+        assert result["calc_boost_fee_total"].iloc[0] == pytest.approx(30.0)
+        assert result["fact_boost_wallet_spend"].iloc[0] == pytest.approx(40.0)
+        assert result["fact_boost_fee_total"].iloc[0] == pytest.approx(42.0)
+        # Plan deducts the expected boost; fact profit deducts the actual
+        # wallet debit and existing service commission exactly once.
+        assert result["expected_profit"].iloc[0] == pytest.approx(90.0)
+        assert result["profit"].iloc[0] == pytest.approx(70.0)
+        assert result["profit_no_promo"].iloc[0] == pytest.approx(80.0)
+
+    def test_old_boost_snapshot_is_not_backfilled(self):
+        df = make_orders(planned_boost_amount=None)
+        df, our_costs = self._setup(df)
+        result = _compute_profits(df, our_costs)
+
+        assert pd.isna(result["calc_boost_fee_total"].iloc[0])
+        assert result["expected_profit"].iloc[0] == pytest.approx(120.0)
+
+    def test_plan_margin_is_net_of_saved_boost_amount(self):
+        df = make_orders(planned_boost_amount=30.0, planned_boost_percent=5.0)
+        q = df["quantity"].fillna(1)
+        df = _compute_base_totals(df, q)
+        df = _compute_payouts(df, q)
+        our_costs = df["base_price_total"] + df["ff_fee_total"] + df["socket_adapter_total"]
+        df = _compute_profits(df, our_costs)
+        result = _compute_flags_and_lags(df)
+
+        assert result["our_margin"].iloc[0] == pytest.approx(70.0)
+        assert result["margin_plan_on_cost_pct"].iloc[0] == pytest.approx(7.0)
+        assert result["price_with_margin"].iloc[0] == pytest.approx(1100.0)
 
     def test_profit_no_promo(self, delivered_order):
         """profit_no_promo = expected_payout - our_costs (прomo не учитывается)."""
@@ -517,6 +559,18 @@ class TestComputeActualProfit:
 
         # 1220 - 1100 = 120
         assert result["actual_profit"].iloc[0] == pytest.approx(120.0)
+
+    def test_actual_profit_deducts_boost_wallet_debit_once(self, delivered_order):
+        df = delivered_order.copy()
+        df["boost_wallet_spend"] = -40.0
+        q = df["quantity"].fillna(1)
+        df = _compute_base_totals(df, q)
+        df = _compute_payouts(df, q)
+        our_costs = df["base_price_total"] + df["ff_fee_total"] + df["socket_adapter_total"]
+        df = _compute_profits(df, our_costs)
+        result = _compute_actual_profit(df, our_costs)
+
+        assert result["actual_profit"].iloc[0] == pytest.approx(80.0)
 
     def test_actual_profit_zero_when_not_paid(self, unpaid_order):
         """Если нет данных о выплате → actual_profit = 0."""

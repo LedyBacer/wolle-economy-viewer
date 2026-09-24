@@ -87,19 +87,20 @@ PAYMENT_AGGREGATES_SQL   →  payments DataFrame (бонусы, штрафы, д
 
 - `sell_price` = из `ya_order_margin_report.sell_price` — итоговая цена заказа (buyer_payment + субсидия ЯМ)
 - `expected_payout` = `sell_price − market_services` — фактический перевод от ЯМ
-- `base_price_total` = `base_price * quantity` — **плановая** закупочная цена. Используется в `our_margin` / `price_with_margin` (это плановая наценка Wolle).
+- `base_price_total` = `base_price * quantity` — **плановая** закупочная цена. `price_with_margin` использует заданную наценку, `our_margin` в выдаче — маржа за вычетом планового буста.
 - `supplier_price_fact` = фактическая цена закупки за единицу из `order_to_supplier` (см. `SUPPLIER_PRICE_FACT_SQL`). Может быть NaN или 0 — тогда fallback на `base_price`.
 - `effective_purchase_total` = `supplier_price_fact * quantity` если `supplier_price_fact > 0`, иначе `base_price_total`. Это реальные затраты на закупку.
 - `uses_fact_purchase_price` = bool-флаг, использовалась ли фактическая цена (для аналитики покрытия).
 - `our_costs` = `effective_purchase_total + ff_fee_total + socket_adapter_total` — наши затраты (с приоритетом фактической цены)
-- `expected_profit` = `expected_payout − our_costs` (без учёта промо)
+- `expected_profit` = `expected_payout − our_costs − planned_boost` (без промо; буст берётся из снимка цены на момент заказа)
 - `promo_discounts` = наши расходы на промо из баланса баллов (отрицательная сумма, из `ya_payments_reports`)
-- `profit` = `expected_payout + promo_discounts − our_costs` (с учётом промо) → колонка `profit`
-- `profit_no_promo` = `expected_payout − our_costs` (без учёта промо; было `profit_no_bonus`)
-- `income_after_fees_promo` = `expected_payout + promo_discounts` (было `income_after_fees_bonus`)
+- `profit` = `expected_payout + promo_discounts + boost_wallet_spend − our_costs` (с учётом промо и отдельного списания за буст) → колонка `profit`
+- `profit_no_promo` = `expected_payout + boost_wallet_spend − our_costs` (без промо, но с расходом буста; было `profit_no_bonus`)
+- `income_after_fees_promo` = `expected_payout + promo_discounts + boost_wallet_spend` (было `income_after_fees_bonus`)
 - `bonus_points` = субсидия ЯМ (tr.bonuses). **СПРАВОЧНО** — уже включена в `sell_price`, НЕ прибавлять к прибыли!
 - `calc_commissions` = сумма расчётных комиссий из `ya_order_items.commission_*` полей (~67% заказов)
 - `fact_commissions` = реальные удержания ЯМ из `ya_payments_reports` ≈ `market_services`
+- `fact_boost_service_fee` входит в `fact_commissions`; `fact_boost_wallet_spend` — отдельное списание с бонусного баланса, не часть комиссии. Старым заказам без снимка буста не подставлять текущую настройку и не пересчитывать историю.
 
 ### Формат ya_payments_reports — два типа записей
 
@@ -110,6 +111,7 @@ PAYMENT_AGGREGATES_SQL   →  payments DataFrame (бонусы, штрафы, д
 | `transaction_source` | заполнен | NULL |
 | Реальные комиссии ЯМ | `transaction_source = 'Оплата услуг Яндекс.Маркета'` | `payment_status = 'Удержание'` |
 | Промо-расходы (наши) | `transaction_source = 'Скидка за участие в совместных акциях'` | `payment_status = 'Списание'` |
+| Оплата буста из бонусного баланса | по названию услуги и `payment_status IN ('Списание', 'Возврат списания')` | то же |
 | Субсидия ЯМ (справочно) | `transaction_source = 'Баллы за скидку Маркета'` | `payment_status = 'Начисление'` (второй ряд) |
 
 ### Почему НЕ используем SUM(ya_payments_reports) как сумму выплаты

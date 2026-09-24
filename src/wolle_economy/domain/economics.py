@@ -13,8 +13,8 @@
                         Вычитаются из дохода отдельно (settlement через баланс баллов)
 - our_costs           = base_price + ff_fee + socket_adapter + custom_delivery
                         (за доставленное количество)
-- expected_profit     = expected_payout - our_costs (без учёта промо)
-- profit              = expected_payout + promo_discounts - our_costs (с учётом промо)
+- expected_profit     = expected_payout - our_costs - planned_boost (без промо)
+- profit              = expected_payout + promo_discounts + boost_wallet_spend - our_costs
 - fact_commissions    = реальные удержания ЯМ из платёжного отчёта ≈ market_services
 """
 
@@ -248,13 +248,13 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
             + report_components["sorting_center_processing"]
             + report_components["warehouse_order_processing"]
         ),
+        "fact_boost_service_fee": report_components["boost"],
         "fact_other_fees": sum(
             (
                 report_components[key]
                 for key in (
                     "warehouse_processing",
                     "loyalty",
-                    "boost",
                     "installment",
                     "pickup",
                     "storage",
@@ -303,6 +303,29 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
         df[fact_column] = fact_values
         df[diff_column] = (fact_values - df[plan_column]).where(details_complete)
 
+    planned_boost_unit = pd.to_numeric(
+        df.get("planned_boost_amount", pd.Series(np.nan, index=df.index)),
+        errors="coerce",
+    )
+    # Сохранённая сумма буста — увеличение цены на единицу товара,
+    # компенсирующее ставку. Для старой истории без снимка оставляем NaN.
+    df["calc_boost_fee_total"] = planned_boost_unit * q
+    wallet_spend_signed = pd.to_numeric(
+        df.get("boost_wallet_spend", pd.Series(0.0, index=df.index)),
+        errors="coerce",
+    ).fillna(0)
+    # В реестре списание отрицательное. Для таблицы выводим расход плюсом,
+    # а исходный знак сохраняем для формулы прибыли.
+    df["boost_wallet_spend"] = wallet_spend_signed
+    df["fact_boost_wallet_spend"] = -wallet_spend_signed
+    df["fact_boost_fee_total"] = (
+        pd.to_numeric(
+            df.get("fact_boost_service_fee", pd.Series(0.0, index=df.index)),
+            errors="coerce",
+        ).fillna(0)
+        + df["fact_boost_wallet_spend"]
+    )
+
     for column in ("fact_other_fees", "fact_unclassified_fees"):
         df[column] = pd.to_numeric(
             df.get(column, pd.Series(np.nan, index=df.index)),
@@ -319,14 +342,22 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
 
 def _compute_profits(df: pd.DataFrame, our_costs: pd.Series) -> pd.DataFrame:
     """expected_profit, income_after_fees, profit, profit_no_promo, diff_from_min_price."""
-    df["expected_profit"] = df["expected_payout"] - our_costs
+    planned_boost = pd.to_numeric(
+        df.get("calc_boost_fee_total", pd.Series(0.0, index=df.index)),
+        errors="coerce",
+    ).fillna(0)
+    boost_wallet_spend = pd.to_numeric(
+        df.get("boost_wallet_spend", pd.Series(0.0, index=df.index)),
+        errors="coerce",
+    ).fillna(0)  # debit is negative
+    df["expected_profit"] = df["expected_payout"] - our_costs - planned_boost
 
     promo = df["promo_discounts"].fillna(0)  # отрицательная сумма
     df["income_after_fees"] = df["expected_payout"]
-    df["income_after_fees_promo"] = df["expected_payout"] + promo
+    df["income_after_fees_promo"] = df["expected_payout"] + promo + boost_wallet_spend
 
     df["profit"] = df["income_after_fees_promo"] - our_costs
-    df["profit_no_promo"] = df["income_after_fees"] - our_costs
+    df["profit_no_promo"] = df["income_after_fees"] + boost_wallet_spend - our_costs
 
     df["diff_from_min_price"] = df["sell_price"].fillna(0) - df["min_sell_price_total"]
     return df
@@ -379,10 +410,21 @@ def _compute_actual_profit(df: pd.DataFrame, our_costs: pd.Series) -> pd.DataFra
     promo = pd.to_numeric(
         df.get("promo_discounts", pd.Series(0.0, index=df.index)), errors="coerce"
     ).fillna(0)
+    boost_wallet_spend = pd.to_numeric(
+        df.get("boost_wallet_spend", pd.Series(0.0, index=df.index)),
+        errors="coerce",
+    ).fillna(0)  # debit is negative
     compensations = pd.to_numeric(
         df.get("compensations", pd.Series(0.0, index=df.index)), errors="coerce"
     ).fillna(0)
-    actual_full = df["sell_price"].fillna(0) - actual_market_services + promo + compensations - our_costs
+    actual_full = (
+        df["sell_price"].fillna(0)
+        - actual_market_services
+        + promo
+        + boost_wallet_spend
+        + compensations
+        - our_costs
+    )
 
     # Отменён до отгрузки: расходы не понесены, учитываем только штрафы/компенсации
     cancelled_result = (
@@ -407,15 +449,21 @@ def _compute_flags_and_lags(df: pd.DataFrame) -> pd.DataFrame:
     sp = df["sell_price"].replace(0, np.nan)
     df["take_rate_pct"] = (df["market_services"] / sp * 100).round(2)
     df["margin_pct"] = (df["profit"] / sp * 100).round(2)
-    df["margin_plan_pct"] = (df["our_margin"] / sp * 100).round(2)
+    planned_boost = pd.to_numeric(
+        df.get("calc_boost_fee_total", pd.Series(0.0, index=df.index)),
+        errors="coerce",
+    ).fillna(0)
+    planned_margin_net_boost = df["our_margin"] - planned_boost
+    df["our_margin"] = planned_margin_net_boost
+    df["margin_plan_pct"] = (planned_margin_net_boost / sp * 100).round(2)
     df["margin_fact_pct"] = df["margin_pct"]
     df["margin_fact_rub"] = df["profit"]
 
     # Маржа относительно закупочной цены (для сравнения с margin_percent из БД).
-    # План: our_margin / base_price_total → совпадает с margin_percent.
+    # План: наценка за вычетом ожидаемого расхода на буст, относительно закупки.
     # Факт: profit / base_price_total → «сколько реально заработали сверх закупки».
     bp = df["base_price_total"].replace(0, np.nan)
-    df["margin_plan_on_cost_pct"] = (df["our_margin"] / bp * 100).round(2)
+    df["margin_plan_on_cost_pct"] = (planned_margin_net_boost / bp * 100).round(2)
     df["margin_fact_on_cost_pct"] = (df["profit"] / bp * 100).round(2)
 
     df["is_cancelled_before"] = df["fulfillment_status"].isin(CANCELLED_BEFORE_SHIP)
