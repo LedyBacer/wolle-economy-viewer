@@ -68,6 +68,48 @@ def _build_common_filters(
 # Базовый SELECT для позиций заказов (без WHERE и ORDER BY)
 # ---------------------------------------------------------------------------
 _ORDER_ITEMS_SELECT = """
+WITH wallet_operations AS (
+    SELECT
+        o.id AS ya_orders_id,
+        b.shop_sku,
+        b.transaction_type,
+        b.transaction_amount
+    FROM e_com.ya_bonus_wallet_transactions b
+    JOIN e_com.ya_orders o
+      ON o.seller_id = b.platform_sellers_id
+     AND o.campaign_id = b.campaign_id
+     AND o.order_id = b.order_id
+    -- В отдельном отчёте payment_status имеет вид «Справочно: ...».
+    -- Различать списание и возврат нужно по transaction_type; обычный
+    -- «Возврат» — это отзыв субсидии покупателя, а не возврат нашего расхода.
+    WHERE b.transaction_type IN ('Списание', 'Возврат списания')
+      AND b.transaction_source IN (
+          'Скидка за участие в совместных акциях',
+          'Возврат скидки за участие в совместных акциях'
+      )
+      AND b.service_name IS DISTINCT FROM 'Буст продаж, оплата за продажи'
+),
+wallet_order AS (
+    SELECT
+        w.ya_orders_id,
+        SUM(w.transaction_amount) AS total_amount,
+        COUNT(*) FILTER (WHERE w.transaction_type = 'Списание') AS debit_count,
+        SUM(w.transaction_amount) FILTER (
+            WHERE EXISTS (
+                SELECT 1 FROM e_com.ya_order_items matched_item
+                WHERE matched_item.order_id = w.ya_orders_id
+                  AND matched_item.offer_id = w.shop_sku
+            )
+        ) AS matched_amount
+    FROM wallet_operations w
+    GROUP BY w.ya_orders_id
+),
+wallet_sku AS (
+    SELECT ya_orders_id, shop_sku, SUM(transaction_amount) AS amount
+    FROM wallet_operations
+    WHERE shop_sku IS NOT NULL
+    GROUP BY ya_orders_id, shop_sku
+)
 SELECT
     -- Идентификаторы
     o.id                          AS ya_order_id,
@@ -91,6 +133,22 @@ SELECT
     upg.name                      AS product_name,
     i.supplier_name               AS supplier_name,
     i.count                       AS quantity,
+    -- Новый отчёт по баллам имеет приоритет над строками старого платёжного
+    -- отчёта. Сумма с неизвестным SKU относится к первой позиции заказа,
+    -- чтобы итог по заказу не терялся и не повторялся в каждой позиции.
+    (COALESCE(wallet_order.debit_count, 0) > 0) AS wallet_promo_available,
+    COALESCE(wallet_sku.amount / NULLIF((
+        SELECT COUNT(*) FROM e_com.ya_order_items same_sku
+        WHERE same_sku.order_id = o.id AND same_sku.offer_id = i.offer_id
+    ), 0), 0)
+    + CASE WHEN i.id = (
+        SELECT MIN(first_item.id) FROM e_com.ya_order_items first_item
+        WHERE first_item.order_id = o.id
+      ) THEN wallet_order.total_amount - COALESCE(wallet_order.matched_amount, 0)
+      ELSE 0 END AS wallet_promo_discounts,
+    (COALESCE(wallet_order.debit_count, 0) > 0
+     AND wallet_order.total_amount - COALESCE(wallet_order.matched_amount, 0) <> 0)
+        AS wallet_promo_unallocated_sku,
 
     -- Статусы
     -- Для заказов без margin_report (WolleBuy / ТехноПравда Гонконг и др.)
@@ -184,6 +242,9 @@ LEFT JOIN LATERAL (
 ) price_snapshot ON TRUE
 LEFT JOIN e_com.ya_order_margin_report mr
     ON o.id = mr.ya_orders_id
+LEFT JOIN wallet_order ON wallet_order.ya_orders_id = o.id
+LEFT JOIN wallet_sku ON wallet_sku.ya_orders_id = o.id
+    AND wallet_sku.shop_sku = i.offer_id
 -- Агрегируем транзакции по позиции: одна ya_order_items может иметь несколько строк,
 -- например если из 3 заказанных штук 1 вернули — будет транзакция доставки и транзакция возврата.
 -- SUM по финансовым полям, MAX по датам и статусу.

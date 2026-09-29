@@ -161,6 +161,16 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
     if "promo_discounts" not in df.columns:
         df["promo_discounts"] = 0.0
     df["promo_discounts"] = df["promo_discounts"].fillna(0)
+    # Отдельный отчёт по баллам надёжнее старых строк платёжного отчёта.
+    # Замена, а не сложение, предотвращает двойной учёт уже распознанных списаний.
+    wallet_available = df.get(
+        "wallet_promo_available", pd.Series(False, index=df.index)
+    ).fillna(False).astype(bool)
+    wallet_promo = pd.to_numeric(
+        df.get("wallet_promo_discounts", pd.Series(0.0, index=df.index)),
+        errors="coerce",
+    ).fillna(0)
+    df["promo_discounts"] = df["promo_discounts"].where(~wallet_available, wallet_promo)
 
     if "fact_commissions" not in df.columns:
         fact_commissions_raw = pd.Series(np.nan, index=df.index)

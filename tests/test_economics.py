@@ -374,6 +374,37 @@ class TestComputePayouts:
 
         assert result["promo_discounts"].iloc[0] == 0.0
 
+    def test_bonus_report_replaces_old_payment_promo_without_double_count(self):
+        df = make_orders(
+            promo_discounts=-5597.79,
+            wallet_promo_available=True,
+            wallet_promo_discounts=-5597.79,
+            sell_price=20942.0,
+            market_services=1458.50,
+            fact_commissions=1458.50,
+            base_price=6906.0,
+            ff_fee=2243.0,
+        )
+
+        result = calc_economics(df)
+
+        assert result["promo_discounts"].iloc[0] == pytest.approx(-5597.79)
+        assert result["profit"].iloc[0] == pytest.approx(4736.71)
+        assert result["actual_profit"].iloc[0] == pytest.approx(4736.71)
+        assert result["margin_fact_on_cost_pct"].iloc[0] == pytest.approx(68.59)
+
+    def test_bonus_report_amount_overrides_missing_status_payment_row(self):
+        df = make_orders(
+            promo_discounts=0.0,
+            wallet_promo_available=True,
+            wallet_promo_discounts=-5597.79,
+        )
+
+        result = calc_economics(df)
+
+        assert result["promo_discounts"].iloc[0] == pytest.approx(-5597.79)
+        assert result["profit"].iloc[0] == pytest.approx(120.0 - 5597.79)
+
 
 # ===========================================================================
 # _compute_profits

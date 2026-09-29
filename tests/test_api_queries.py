@@ -72,6 +72,10 @@ def test_yandex_order_query_selects_fixed_fee_snapshots() -> None:
     assert "AS order_items_count" in query
     assert "mr.service_details" in query
     assert "AS report_service_details" in query
+    assert "e_com.ya_bonus_wallet_transactions" in query
+    assert "wallet_promo_discounts" in query
+    assert "wallet_promo_unallocated_sku" in query
+    assert "b.transaction_type IN ('Списание', 'Возврат списания')" in query
     assert "history.boost_percent" in query
     assert "history.boost_amount" in query
     assert "LEFT JOIN LATERAL" in query
