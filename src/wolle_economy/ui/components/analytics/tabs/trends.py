@@ -42,7 +42,7 @@ def tab_trends(df: pd.DataFrame, key_prefix: str = "ym") -> None:
     order_agg = od.groupby("период").agg(
         выручка=("sell_price", "sum"),
         заказов=("ya_order_id", "nunique"),
-        выплата=("expected_payout", "sum"),
+        выплата=("cash_payout" if "cash_payout" in od else "expected_payout", "sum"),
     )
     item_agg = items.groupby("период").agg(
         прибыль=("profit", "sum"),

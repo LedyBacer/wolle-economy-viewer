@@ -422,12 +422,12 @@ class TestComputeProfits:
         return df, our_costs
 
     def test_expected_profit(self, delivered_order):
-        """expected_profit = expected_payout - our_costs"""
+        """Без полного снимка план — исходная целевая прибыль от закупки."""
         df, our_costs = self._setup(delivered_order)
         result = _compute_profits(df, our_costs)
 
         # expected_payout=1220, our_costs=1100 (1000+100+0)
-        assert result["expected_profit"].iloc[0] == pytest.approx(120.0)
+        assert result["expected_profit"].iloc[0] == pytest.approx(100.0)
 
     def test_boost_is_separate_plan_and_fact_cost(self):
         df = make_orders(
@@ -445,7 +445,7 @@ class TestComputeProfits:
         assert result["fact_boost_fee_total"].iloc[0] == pytest.approx(42.0)
         # Plan deducts the expected boost; fact profit deducts the actual
         # wallet debit and existing service commission exactly once.
-        assert result["expected_profit"].iloc[0] == pytest.approx(90.0)
+        assert result["expected_profit"].iloc[0] == pytest.approx(100.0)
         assert result["profit"].iloc[0] == pytest.approx(70.0)
         assert result["profit_no_promo"].iloc[0] == pytest.approx(80.0)
 
@@ -455,9 +455,9 @@ class TestComputeProfits:
         result = _compute_profits(df, our_costs)
 
         assert pd.isna(result["calc_boost_fee_total"].iloc[0])
-        assert result["expected_profit"].iloc[0] == pytest.approx(120.0)
+        assert result["expected_profit"].iloc[0] == pytest.approx(100.0)
 
-    def test_plan_margin_is_net_of_saved_boost_amount(self):
+    def test_boost_does_not_reduce_target_purchase_margin(self):
         df = make_orders(planned_boost_amount=30.0, planned_boost_percent=5.0)
         q = df["quantity"].fillna(1)
         df = _compute_base_totals(df, q)
@@ -466,8 +466,8 @@ class TestComputeProfits:
         df = _compute_profits(df, our_costs)
         result = _compute_flags_and_lags(df)
 
-        assert result["our_margin"].iloc[0] == pytest.approx(70.0)
-        assert result["margin_plan_on_cost_pct"].iloc[0] == pytest.approx(7.0)
+        assert result["our_margin"].iloc[0] == pytest.approx(100.0)
+        assert result["margin_plan_on_cost_pct"].iloc[0] == pytest.approx(10.0)
         assert result["price_with_margin"].iloc[0] == pytest.approx(1100.0)
 
     def test_profit_no_promo(self, delivered_order):
@@ -631,7 +631,7 @@ class TestComputeActualProfit:
         result = _compute_actual_profit(df, our_costs)
 
         # actual=120, expected=120 → diff=0
-        assert result["profit_vs_expected"].iloc[0] == pytest.approx(0.0)
+        assert result["profit_vs_expected"].iloc[0] == pytest.approx(20.0)
 
 
 # ===========================================================================
@@ -884,7 +884,7 @@ class TestCalcEconomicsIntegration:
         #           = 800 + 100 + 0 = 900 (вместо 1100 на плановой цене)
         assert result["our_costs"].iloc[0] == pytest.approx(900.0)
         # expected_payout=1220, our_costs=900 → profit=320
-        assert result["expected_profit"].iloc[0] == pytest.approx(320.0)
+        assert result["expected_profit"].iloc[0] == pytest.approx(100.0)
         assert result["profit"].iloc[0] == pytest.approx(320.0)
         assert result["actual_profit"].iloc[0] == pytest.approx(320.0)
         assert result["uses_fact_purchase_price"].iloc[0] == True  # noqa: E712
@@ -925,11 +925,12 @@ class TestMultiItemOrder:
         # Вторая позиция: base_price=500, q=2 → base_price_total=1000
         assert result["base_price_total"].iloc[1] == pytest.approx(1000.0)
 
-    def test_sell_price_identical_in_both_rows(self, multi_item_order):
-        """sell_price не должен меняться — он общий для заказа."""
+    def test_order_sell_price_is_not_repeated_in_both_rows(self, multi_item_order):
+        """Сумма выручки позиций равна единственной выручке заказа."""
         result = calc_economics(multi_item_order)
 
-        assert result["sell_price"].iloc[0] == result["sell_price"].iloc[1]
+        assert result["sell_price"].sum() == pytest.approx(multi_item_order["sell_price"].iloc[0])
+        assert result["order_costs_allocated"].all()
 
     def test_quantity_correctly_scales_costs(self, multi_item_order):
         """ff_fee_total для строки с quantity=2 должен быть в два раза больше."""

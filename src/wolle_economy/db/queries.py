@@ -183,9 +183,10 @@ SELECT
     i.final_price                 AS min_sell_price,
     price_snapshot.boost_percent  AS planned_boost_percent,
     price_snapshot.boost_amount   AS planned_boost_amount,
+    COALESCE(NULLIF(to_jsonb(i)->'pricing_snapshot', 'null'::jsonb), price_snapshot.pricing_snapshot) AS pricing_snapshot,
     i.margin_percent              AS margin_percent,
-    COALESCE(ff.value, 0)         AS ff_fee,
-    COALESCE(sa.value, 0)         AS socket_adapter_fee,
+    COALESCE(i.markup_ff_fees_amount, ff.value, 0) AS ff_fee,
+    COALESCE(i.markup_socket_adapter_fee_amount, sa.value, 0) AS socket_adapter_fee,
     -- Фиксированная доставка из снимка расчёта заказа (наш расход).
     COALESCE(i.markup_custom_delivery_fee_value_amount, 0) AS custom_delivery_fee,
     COALESCE(i.markup_yandex_accepting_payments_fee_amount, 0)
@@ -232,9 +233,10 @@ JOIN e_com.unique_product_groups upg
 -- Только снимок расчёта, действовавший при создании заказа. Старым строкам
 -- без сохранённой детализации оставляем NULL, не подставляя текущие настройки.
 LEFT JOIN LATERAL (
-    SELECT history.boost_percent, history.boost_amount
+    SELECT history.boost_percent, history.boost_amount, to_jsonb(history)->'pricing_snapshot' AS pricing_snapshot
     FROM e_com.yandex_price_history history
     WHERE history.feed_item_id = i.feed_item_id
+      AND history.campaign_id = o.campaign_id
       AND history.start_date <= o.created_at
       AND (history.end_date IS NULL OR o.created_at < history.end_date)
     ORDER BY history.start_date DESC, history.id DESC

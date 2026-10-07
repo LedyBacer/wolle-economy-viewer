@@ -23,7 +23,7 @@ def tab_kpi(df: pd.DataFrame) -> None:
     st.markdown("**Деньги**")
     c = st.columns(4)
     c[0].metric("Выручка (GMV)", fmt_money(revenue))
-    c[1].metric("Выплата от МП", fmt_money(payout))
+    c[1].metric("Денежная выплата (расчёт)", fmt_money(m.cash_payout))
     c[2].metric("Прибыль (с промо)", fmt_money(profit))
     c[3].metric("Прибыль без промо", fmt_money(profit_no_pr))
 
@@ -37,7 +37,7 @@ def tab_kpi(df: pd.DataFrame) -> None:
     st.markdown("**Маржинальность**")
     c = st.columns(4)
     c[0].metric("Net Margin", fmt_pct(net_margin), help="Прибыль / GMV")
-    c[1].metric("Contribution Margin", fmt_pct(contrib), help="(Выплата − затраты) / GMV")
+    c[1].metric("Contribution Margin", fmt_pct(contrib), help="(Доход до списаний баллов − затраты) / GMV")
     c[2].metric("Take Rate МП", fmt_pct(take_rate), help="Комиссии МП / GMV")
     c[3].metric("Доля убыточных заказов", fmt_pct(loss_share))
 
@@ -62,11 +62,11 @@ def tab_kpi(df: pd.DataFrame) -> None:
     fig = go.Figure(
         go.Waterfall(
             orientation="v",
-            measure=["absolute", "relative", "relative", "relative", "total"],
-            x=["Выручка (GMV)", "− Комиссии МП", "− Наши затраты", "+ Промо (−)", "Прибыль"],
-            y=[revenue, -commissions, -our_costs, promo, 0],
+            measure=["absolute", "relative", "relative", "relative", "relative", "total"],
+            x=["Выручка (GMV)", "− Комиссии МП", "− Наши затраты", "Услуги/промо баллами", "Буст баллами", "Прибыль"],
+            y=[revenue, -commissions, -our_costs, promo, m.boost_wallet_spend, 0],
             textposition="outside",
-            text=[fmt_money(v) for v in [revenue, -commissions, -our_costs, promo, profit]],
+            text=[fmt_money(v) for v in [revenue, -commissions, -our_costs, promo, m.boost_wallet_spend, profit]],
             connector={"line": {"color": "rgb(120,120,120)"}},
         )
     )

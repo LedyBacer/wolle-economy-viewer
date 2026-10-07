@@ -112,13 +112,13 @@ def _load_ym_orders_impl(
     )
     engine = get_engine()
     orders_sql, orders_params = build_order_items_query(
-        seller_ids, date_from, date_to, order_id, offer_id
+        seller_ids, date_from, date_to, order_id, None
     )
     payments_sql, payments_params = build_payment_aggregates_query(
         seller_ids, date_from, date_to, order_id
     )
     supplier_sql, supplier_params = build_supplier_price_fact_query(
-        seller_ids, date_from, date_to, order_id, offer_id
+        seller_ids, date_from, date_to, order_id, None
     )
 
     try:
@@ -137,7 +137,8 @@ def _load_ym_orders_impl(
         len(supplier_prices),
     )
     orders = orders.merge(supplier_prices, on="item_id", how="left")
-    return calc_economics(merge_with_payments(orders, payments))
+    result = calc_economics(merge_with_payments(orders, payments))
+    return result.loc[result["offer_id"].astype(str).eq(str(offer_id))] if offer_id is not None else result
 
 
 @st.cache_data(ttl=get_settings().cache_ttl, show_spinner=False)

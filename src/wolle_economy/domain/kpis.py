@@ -14,6 +14,8 @@ class KPIMetrics:
     # Денежные агрегаты
     revenue: float
     payout: float
+    cash_payout: float
+    boost_wallet_spend: float
     commissions: float
     our_costs: float
     profit: float
@@ -47,8 +49,7 @@ def compute_kpis(df: pd.DataFrame) -> KPIMetrics:
     """Вычисляет KPI-метрики из DataFrame позиций заказов.
 
     df — полный DataFrame (одна строка = одна позиция заказа).
-    Поля уровня заказа (sell_price, market_services, expected_payout)
-    дедуплицируются по ya_order_id перед суммированием.
+    Суммы позиций собираются по ya_order_id перед суммированием.
     """
     from wolle_economy.ui.helpers import orders_dedup  # локальный импорт — нет цикла
 
@@ -57,6 +58,8 @@ def compute_kpis(df: pd.DataFrame) -> KPIMetrics:
 
     revenue = od["sell_price"].sum()
     payout = od["expected_payout"].sum()
+    cash_payout = od.get("cash_payout", od["expected_payout"]).sum()
+    boost_wallet_spend = od.get("boost_wallet_spend", pd.Series(dtype=float)).fillna(0).sum()
     commissions = od["market_services"].sum()
     our_costs = df["our_costs"].sum()
     profit = df["profit"].sum()
@@ -90,6 +93,8 @@ def compute_kpis(df: pd.DataFrame) -> KPIMetrics:
     return KPIMetrics(
         revenue=revenue,
         payout=payout,
+        cash_payout=cash_payout,
+        boost_wallet_spend=boost_wallet_spend,
         commissions=commissions,
         our_costs=our_costs,
         profit=profit,

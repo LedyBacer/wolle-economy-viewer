@@ -1,0 +1,1530 @@
+[
+  {
+    "order_id": 61393666626,
+    "campaign_id": 121194382,
+    "offer_id": "391236",
+    "quantity": 1,
+    "feed_weight": "0.11",
+    "cross_border_fee": "265.03"
+  },
+  {
+    "order_id": 61377836483,
+    "campaign_id": 121194382,
+    "offer_id": "414651",
+    "quantity": 1,
+    "feed_weight": "0.09",
+    "cross_border_fee": "268.46"
+  },
+  {
+    "order_id": 61339589762,
+    "campaign_id": 121194382,
+    "offer_id": "487625",
+    "quantity": 1,
+    "feed_weight": "2.20",
+    "cross_border_fee": "976.41"
+  },
+  {
+    "order_id": 61285535296,
+    "campaign_id": 121194382,
+    "offer_id": "415604",
+    "quantity": 1,
+    "feed_weight": "0.16",
+    "cross_border_fee": "362.44"
+  },
+  {
+    "order_id": 61272651265,
+    "campaign_id": 121194382,
+    "offer_id": "469421",
+    "quantity": 1,
+    "feed_weight": "1.21",
+    "cross_border_fee": "843.32"
+  },
+  {
+    "order_id": 61225292930,
+    "campaign_id": 121194382,
+    "offer_id": "456742",
+    "quantity": 2,
+    "feed_weight": "0.10",
+    "cross_border_fee": "433.10"
+  },
+  {
+    "order_id": 61199360193,
+    "campaign_id": 121194382,
+    "offer_id": "154099",
+    "quantity": 1,
+    "feed_weight": "0.66",
+    "cross_border_fee": "756.20"
+  },
+  {
+    "order_id": 61153780098,
+    "campaign_id": 121194382,
+    "offer_id": "199595",
+    "quantity": 1,
+    "feed_weight": "2.20",
+    "cross_border_fee": "918.10"
+  },
+  {
+    "order_id": 61135481600,
+    "campaign_id": 121194382,
+    "offer_id": "452042",
+    "quantity": 1,
+    "feed_weight": "0.16",
+    "cross_border_fee": "280.12"
+  },
+  {
+    "order_id": 61056123136,
+    "campaign_id": 121194382,
+    "offer_id": "295184",
+    "quantity": 1,
+    "feed_weight": "2.20",
+    "cross_border_fee": "1354.39"
+  },
+  {
+    "order_id": 60979132098,
+    "campaign_id": 121194382,
+    "offer_id": "359109",
+    "quantity": 1,
+    "feed_weight": "1.00",
+    "cross_border_fee": "359.69"
+  },
+  {
+    "order_id": 60870884739,
+    "campaign_id": 121194382,
+    "offer_id": "441954",
+    "quantity": 1,
+    "feed_weight": "0.57",
+    "cross_border_fee": "252.68"
+  },
+  {
+    "order_id": 60840513155,
+    "campaign_id": 121194382,
+    "offer_id": "204147",
+    "quantity": 1,
+    "feed_weight": "1.65",
+    "cross_border_fee": "795.99"
+  },
+  {
+    "order_id": 60802418306,
+    "campaign_id": 121194382,
+    "offer_id": "379091",
+    "quantity": 1,
+    "feed_weight": "0.22",
+    "cross_border_fee": "309.62"
+  },
+  {
+    "order_id": 60791005504,
+    "campaign_id": 121194382,
+    "offer_id": "295184",
+    "quantity": 1,
+    "feed_weight": "2.20",
+    "cross_border_fee": "1376.35"
+  },
+  {
+    "order_id": 60702248834,
+    "campaign_id": 121194382,
+    "offer_id": "405259",
+    "quantity": 1,
+    "feed_weight": "0.14",
+    "cross_border_fee": "284.23"
+  },
+  {
+    "order_id": 60696710338,
+    "campaign_id": 121194382,
+    "offer_id": "525824",
+    "quantity": 1,
+    "feed_weight": "1.65",
+    "cross_border_fee": "1222.00"
+  },
+  {
+    "order_id": 60695983554,
+    "campaign_id": 121194382,
+    "offer_id": "493735",
+    "quantity": 1,
+    "feed_weight": "0.06",
+    "cross_border_fee": "253.36"
+  },
+  {
+    "order_id": 60666521089,
+    "campaign_id": 121194382,
+    "offer_id": "362263",
+    "quantity": 1,
+    "feed_weight": "0.30",
+    "cross_border_fee": "474.26"
+  },
+  {
+    "order_id": 60598359683,
+    "campaign_id": 121194382,
+    "offer_id": "301364",
+    "quantity": 1,
+    "feed_weight": "0.60",
+    "cross_border_fee": "507.18"
+  },
+  {
+    "order_id": 60492953410,
+    "campaign_id": 121194382,
+    "offer_id": "359378",
+    "quantity": 1,
+    "feed_weight": "0.06",
+    "cross_border_fee": "324.71"
+  },
+  {
+    "order_id": 60481966080,
+    "campaign_id": 121194382,
+    "offer_id": "442225",
+    "quantity": 1,
+    "feed_weight": "0.30",
+    "cross_border_fee": "361.07"
+  },
+  {
+    "order_id": 60443052995,
+    "campaign_id": 121194382,
+    "offer_id": "580418",
+    "quantity": 1,
+    "feed_weight": "1.21",
+    "cross_border_fee": "854.99"
+  },
+  {
+    "order_id": 60365914946,
+    "campaign_id": 121194382,
+    "offer_id": "468180",
+    "quantity": 1,
+    "feed_weight": "1.50",
+    "cross_border_fee": "1077.94"
+  },
+  {
+    "order_id": 60262088066,
+    "campaign_id": 121194382,
+    "offer_id": "218565",
+    "quantity": 1,
+    "feed_weight": "1.98",
+    "cross_border_fee": "920.16"
+  },
+  {
+    "order_id": 60235725378,
+    "campaign_id": 121194382,
+    "offer_id": "202300",
+    "quantity": 1,
+    "feed_weight": "1.65",
+    "cross_border_fee": "542.86"
+  },
+  {
+    "order_id": 60153405505,
+    "campaign_id": 121194382,
+    "offer_id": "471984",
+    "quantity": 1,
+    "feed_weight": "1.20",
+    "cross_border_fee": "852.24"
+  },
+  {
+    "order_id": 60152863363,
+    "campaign_id": 121194382,
+    "offer_id": "218352",
+    "quantity": 1,
+    "feed_weight": "1.65",
+    "cross_border_fee": "540.11"
+  },
+  {
+    "order_id": 60049700865,
+    "campaign_id": 121194382,
+    "offer_id": "416683",
+    "quantity": 1,
+    "feed_weight": "0.27",
+    "cross_border_fee": "608.03"
+  },
+  {
+    "order_id": 60046987777,
+    "campaign_id": 121194382,
+    "offer_id": "359378",
+    "quantity": 1,
+    "feed_weight": "0.06",
+    "cross_border_fee": "326.77"
+  },
+  {
+    "order_id": 59966656449,
+    "campaign_id": 121194382,
+    "offer_id": "391236",
+    "quantity": 1,
+    "feed_weight": "0.11",
+    "cross_border_fee": "261.60"
+  },
+  {
+    "order_id": 59951377408,
+    "campaign_id": 121194382,
+    "offer_id": "301364",
+    "quantity": 1,
+    "feed_weight": "0.60",
+    "cross_border_fee": "519.53"
+  },
+  {
+    "order_id": 59868903746,
+    "campaign_id": 121194382,
+    "offer_id": "301364",
+    "quantity": 1,
+    "feed_weight": "0.60",
+    "cross_border_fee": "533.94"
+  },
+  {
+    "order_id": 59863566914,
+    "campaign_id": 121194382,
+    "offer_id": "166213",
+    "quantity": 1,
+    "feed_weight": "2.20",
+    "cross_border_fee": "1266.59"
+  },
+  {
+    "order_id": 59863406787,
+    "campaign_id": 121194382,
+    "offer_id": "537202",
+    "quantity": 1,
+    "feed_weight": "1.65",
+    "cross_border_fee": "894.09"
+  },
+  {
+    "order_id": 59795805507,
+    "campaign_id": 121194382,
+    "offer_id": "496151",
+    "quantity": 1,
+    "feed_weight": "1.10",
+    "cross_border_fee": "251.31"
+  },
+  {
+    "order_id": 59667689408,
+    "campaign_id": 121194382,
+    "offer_id": "516728",
+    "quantity": 1,
+    "feed_weight": "1.43",
+    "cross_border_fee": "1002.48"
+  },
+  {
+    "order_id": 59613027392,
+    "campaign_id": 121194382,
+    "offer_id": "359378",
+    "quantity": 1,
+    "feed_weight": "0.06",
+    "cross_border_fee": "340.49"
+  },
+  {
+    "order_id": 59469580992,
+    "campaign_id": 121194382,
+    "offer_id": "401201",
+    "quantity": 1,
+    "feed_weight": "0.22",
+    "cross_border_fee": "326.77"
+  },
+  {
+    "order_id": 59429467395,
+    "campaign_id": 121194382,
+    "offer_id": "416936",
+    "quantity": 1,
+    "feed_weight": "0.20",
+    "cross_border_fee": "391.94"
+  },
+  {
+    "order_id": 59391405312,
+    "campaign_id": 121194382,
+    "offer_id": "432926",
+    "quantity": 1,
+    "feed_weight": "0.48",
+    "cross_border_fee": "750.03"
+  },
+  {
+    "order_id": 59333966978,
+    "campaign_id": 121194382,
+    "offer_id": "590543",
+    "quantity": 1,
+    "feed_weight": "1.32",
+    "cross_border_fee": "810.40"
+  },
+  {
+    "order_id": 59313278721,
+    "campaign_id": 121194382,
+    "offer_id": "416683",
+    "quantity": 1,
+    "feed_weight": "0.27",
+    "cross_border_fee": "563.44"
+  },
+  {
+    "order_id": 59240937729,
+    "campaign_id": 121194382,
+    "offer_id": "189072",
+    "quantity": 1,
+    "feed_weight": "2.75",
+    "cross_border_fee": "1129.39"
+  },
+  {
+    "order_id": 59164121283,
+    "campaign_id": 121194382,
+    "offer_id": "153068",
+    "quantity": 1,
+    "feed_weight": "2.20",
+    "cross_border_fee": "1198.67"
+  },
+  {
+    "order_id": 59127307906,
+    "campaign_id": 121194382,
+    "offer_id": "526387",
+    "quantity": 1,
+    "feed_weight": "1.20",
+    "cross_border_fee": "841.95"
+  },
+  {
+    "order_id": 59107754115,
+    "campaign_id": 121194382,
+    "offer_id": "443293",
+    "quantity": 1,
+    "feed_weight": "0.99",
+    "cross_border_fee": "1338.62"
+  },
+  {
+    "order_id": 59087291713,
+    "campaign_id": 121194382,
+    "offer_id": "507826",
+    "quantity": 1,
+    "feed_weight": "1.32",
+    "cross_border_fee": "785.01"
+  },
+  {
+    "order_id": 58936414913,
+    "campaign_id": 121194382,
+    "offer_id": "495384",
+    "quantity": 1,
+    "feed_weight": "3.63",
+    "cross_border_fee": "12040.22"
+  },
+  {
+    "order_id": 58856119808,
+    "campaign_id": 121194382,
+    "offer_id": "416290",
+    "quantity": 1,
+    "feed_weight": "0.44",
+    "cross_border_fee": "402.23"
+  },
+  {
+    "order_id": 58853309699,
+    "campaign_id": 121194382,
+    "offer_id": "583665",
+    "quantity": 1,
+    "feed_weight": "1.00",
+    "cross_border_fee": "1314.61"
+  },
+  {
+    "order_id": 58849337921,
+    "campaign_id": 121194382,
+    "offer_id": "404276",
+    "quantity": 1,
+    "feed_weight": "0.11",
+    "cross_border_fee": "320.59"
+  },
+  {
+    "order_id": 58824729345,
+    "campaign_id": 121194382,
+    "offer_id": "305158",
+    "quantity": 1,
+    "feed_weight": "0.88",
+    "cross_border_fee": "1206.90"
+  },
+  {
+    "order_id": 58509609216,
+    "campaign_id": 121194382,
+    "offer_id": "360787",
+    "quantity": 1,
+    "feed_weight": "0.80",
+    "cross_border_fee": "872.82"
+  },
+  {
+    "order_id": 58381986944,
+    "campaign_id": 121194382,
+    "offer_id": "354909",
+    "quantity": 1,
+    "feed_weight": "0.15",
+    "cross_border_fee": "374.79"
+  },
+  {
+    "order_id": 58364259457,
+    "campaign_id": 121194382,
+    "offer_id": "492124",
+    "quantity": 1,
+    "feed_weight": "0.42",
+    "cross_border_fee": "785.01"
+  },
+  {
+    "order_id": 58292273603,
+    "campaign_id": 121194382,
+    "offer_id": "578490",
+    "quantity": 1,
+    "feed_weight": "0.88",
+    "cross_border_fee": "297.95"
+  },
+  {
+    "order_id": 58260246723,
+    "campaign_id": 121194382,
+    "offer_id": "354909",
+    "quantity": 1,
+    "feed_weight": "0.15",
+    "cross_border_fee": "373.41"
+  },
+  {
+    "order_id": 58195762371,
+    "campaign_id": 121194382,
+    "offer_id": "415598",
+    "quantity": 1,
+    "feed_weight": "0.16",
+    "cross_border_fee": "363.12"
+  },
+  {
+    "order_id": 58046149312,
+    "campaign_id": 121194382,
+    "offer_id": "113362",
+    "quantity": 1,
+    "feed_weight": "0.49",
+    "cross_border_fee": "956.51"
+  },
+  {
+    "order_id": 58001278018,
+    "campaign_id": 121194382,
+    "offer_id": "354909",
+    "quantity": 1,
+    "feed_weight": "0.15",
+    "cross_border_fee": "376.16"
+  },
+  {
+    "order_id": 57900953410,
+    "campaign_id": 121194382,
+    "offer_id": "415604",
+    "quantity": 1,
+    "feed_weight": "0.16",
+    "cross_border_fee": "369.30"
+  },
+  {
+    "order_id": 57884918915,
+    "campaign_id": 121194382,
+    "offer_id": "400036",
+    "quantity": 1,
+    "feed_weight": "0.70",
+    "cross_border_fee": "1057.36"
+  },
+  {
+    "order_id": 57844021120,
+    "campaign_id": 121194382,
+    "offer_id": "442117",
+    "quantity": 1,
+    "feed_weight": "0.13",
+    "cross_border_fee": "331.57"
+  },
+  {
+    "order_id": 57842070402,
+    "campaign_id": 121194382,
+    "offer_id": "415598",
+    "quantity": 1,
+    "feed_weight": "0.16",
+    "cross_border_fee": "367.93"
+  },
+  {
+    "order_id": 57809616000,
+    "campaign_id": 121194382,
+    "offer_id": "214137",
+    "quantity": 1,
+    "feed_weight": "0.99",
+    "cross_border_fee": "966.12"
+  },
+  {
+    "order_id": 57792721154,
+    "campaign_id": 121194382,
+    "offer_id": "113349",
+    "quantity": 1,
+    "feed_weight": "0.49",
+    "cross_border_fee": "556.58"
+  },
+  {
+    "order_id": 57745267714,
+    "campaign_id": 121194382,
+    "offer_id": "412778",
+    "quantity": 1,
+    "feed_weight": "3.00",
+    "cross_border_fee": "743.85"
+  },
+  {
+    "order_id": 57743716864,
+    "campaign_id": 121194382,
+    "offer_id": "415598",
+    "quantity": 1,
+    "feed_weight": "0.16",
+    "cross_border_fee": "375.47"
+  },
+  {
+    "order_id": 57667028672,
+    "campaign_id": 121194382,
+    "offer_id": "412775",
+    "quantity": 1,
+    "feed_weight": "3.00",
+    "cross_border_fee": "727.39"
+  },
+  {
+    "order_id": 57599618946,
+    "campaign_id": 121194382,
+    "offer_id": "113358",
+    "quantity": 1,
+    "feed_weight": "0.49",
+    "cross_border_fee": "1014.14"
+  },
+  {
+    "order_id": 57546946945,
+    "campaign_id": 121194382,
+    "offer_id": "411841",
+    "quantity": 1,
+    "feed_weight": "0.42",
+    "cross_border_fee": "704.75"
+  },
+  {
+    "order_id": 57519785920,
+    "campaign_id": 121194382,
+    "offer_id": "213356",
+    "quantity": 1,
+    "feed_weight": "0.66",
+    "cross_border_fee": "548.34"
+  },
+  {
+    "order_id": 57496537731,
+    "campaign_id": 121194382,
+    "offer_id": "214144",
+    "quantity": 1,
+    "feed_weight": "0.99",
+    "cross_border_fee": "955.83"
+  },
+  {
+    "order_id": 57493247874,
+    "campaign_id": 121194382,
+    "offer_id": "397233",
+    "quantity": 1,
+    "feed_weight": "0.33",
+    "cross_border_fee": "647.13"
+  },
+  {
+    "order_id": 57484049089,
+    "campaign_id": 121194382,
+    "offer_id": "416687",
+    "quantity": 2,
+    "feed_weight": "0.27",
+    "cross_border_fee": "1063.53"
+  },
+  {
+    "order_id": 57407932096,
+    "campaign_id": 121194382,
+    "offer_id": "431413",
+    "quantity": 1,
+    "feed_weight": "0.07",
+    "cross_border_fee": "380.27"
+  },
+  {
+    "order_id": 57403616833,
+    "campaign_id": 121194382,
+    "offer_id": "354909",
+    "quantity": 1,
+    "feed_weight": "0.15",
+    "cross_border_fee": "380.96"
+  },
+  {
+    "order_id": 57385926723,
+    "campaign_id": 121194382,
+    "offer_id": "296843",
+    "quantity": 1,
+    "feed_weight": "0.81",
+    "cross_border_fee": "970.92"
+  },
+  {
+    "order_id": 57381497666,
+    "campaign_id": 121194382,
+    "offer_id": "475101",
+    "quantity": 1,
+    "feed_weight": "0.27",
+    "cross_border_fee": "385.76"
+  },
+  {
+    "order_id": 57339633088,
+    "campaign_id": 121194382,
+    "offer_id": "183368",
+    "quantity": 1,
+    "feed_weight": "2.20",
+    "cross_border_fee": "1236.40"
+  },
+  {
+    "order_id": 57328227842,
+    "campaign_id": 121194382,
+    "offer_id": "409870",
+    "quantity": 1,
+    "feed_weight": "1.65",
+    "cross_border_fee": "916.04"
+  },
+  {
+    "order_id": 57255665472,
+    "campaign_id": 121194382,
+    "offer_id": "409635",
+    "quantity": 1,
+    "feed_weight": "0.18",
+    "cross_border_fee": "345.29"
+  },
+  {
+    "order_id": 57255474112,
+    "campaign_id": 121194382,
+    "offer_id": "183398",
+    "quantity": 1,
+    "feed_weight": "2.20",
+    "cross_border_fee": "1291.28"
+  },
+  {
+    "order_id": 57241147842,
+    "campaign_id": 121194382,
+    "offer_id": "442118",
+    "quantity": 1,
+    "feed_weight": "0.13",
+    "cross_border_fee": "389.88"
+  },
+  {
+    "order_id": 56904682881,
+    "campaign_id": 121194382,
+    "offer_id": "369906",
+    "quantity": 1,
+    "feed_weight": "0.18",
+    "cross_border_fee": "276.00"
+  },
+  {
+    "order_id": 56476227137,
+    "campaign_id": 121194382,
+    "offer_id": "365030",
+    "quantity": 1,
+    "feed_weight": "0.28",
+    "cross_border_fee": "361.75"
+  },
+  {
+    "order_id": 55409908033,
+    "campaign_id": 121194382,
+    "offer_id": "571285",
+    "quantity": 1,
+    "feed_weight": "1.50",
+    "cross_border_fee": "618.32"
+  },
+  {
+    "order_id": 55155911747,
+    "campaign_id": 121194382,
+    "offer_id": "566683",
+    "quantity": 1,
+    "feed_weight": "1.20",
+    "cross_border_fee": "1036.09"
+  },
+  {
+    "order_id": 54996419203,
+    "campaign_id": 121194382,
+    "offer_id": "404061",
+    "quantity": 1,
+    "feed_weight": "1.21",
+    "cross_border_fee": "812.45"
+  },
+  {
+    "order_id": 53379350595,
+    "campaign_id": 121194382,
+    "offer_id": "452519",
+    "quantity": 1,
+    "feed_weight": "0.33",
+    "cross_border_fee": "536.00"
+  },
+  {
+    "order_id": 61543477955,
+    "campaign_id": 148883560,
+    "offer_id": "3773547",
+    "quantity": 1,
+    "feed_weight": "0.44",
+    "cross_border_fee": "661.53"
+  },
+  {
+    "order_id": 61491435523,
+    "campaign_id": 148883560,
+    "offer_id": "3722154",
+    "quantity": 1,
+    "feed_weight": "0.77",
+    "cross_border_fee": "642.33"
+  },
+  {
+    "order_id": 61483820995,
+    "campaign_id": 148883560,
+    "offer_id": "2495729",
+    "quantity": 1,
+    "feed_weight": "0.50",
+    "cross_border_fee": "304.13"
+  },
+  {
+    "order_id": 61466540035,
+    "campaign_id": 148883560,
+    "offer_id": "759757",
+    "quantity": 1,
+    "feed_weight": "1.65",
+    "cross_border_fee": "1132.82"
+  },
+  {
+    "order_id": 61446840898,
+    "campaign_id": 148883560,
+    "offer_id": "2960034",
+    "quantity": 1,
+    "feed_weight": "1.32",
+    "cross_border_fee": "1081.37"
+  },
+  {
+    "order_id": 61435686273,
+    "campaign_id": 148883560,
+    "offer_id": "3921299",
+    "quantity": 1,
+    "feed_weight": "0.50",
+    "cross_border_fee": "424.86"
+  },
+  {
+    "order_id": 61435463360,
+    "campaign_id": 148883560,
+    "offer_id": "1391942",
+    "quantity": 2,
+    "feed_weight": "0.33",
+    "cross_border_fee": "649.19"
+  },
+  {
+    "order_id": 61434865986,
+    "campaign_id": 148883560,
+    "offer_id": "2437939",
+    "quantity": 1,
+    "feed_weight": "1.49",
+    "cross_border_fee": "940.74"
+  },
+  {
+    "order_id": 61430600193,
+    "campaign_id": 148883560,
+    "offer_id": "1250826",
+    "quantity": 1,
+    "feed_weight": "0.66",
+    "cross_border_fee": "538.05"
+  },
+  {
+    "order_id": 61418445123,
+    "campaign_id": 148883560,
+    "offer_id": "2861005",
+    "quantity": 1,
+    "feed_weight": "0.44",
+    "cross_border_fee": "457.11"
+  },
+  {
+    "order_id": 61417496387,
+    "campaign_id": 148883560,
+    "offer_id": "355757",
+    "quantity": 1,
+    "feed_weight": "0.17",
+    "cross_border_fee": "345.29"
+  },
+  {
+    "order_id": 61415726914,
+    "campaign_id": 148883560,
+    "offer_id": "3675049",
+    "quantity": 1,
+    "feed_weight": "0.39",
+    "cross_border_fee": "301.38"
+  },
+  {
+    "order_id": 61407486978,
+    "campaign_id": 148883560,
+    "offer_id": "260004",
+    "quantity": 1,
+    "feed_weight": "2.20",
+    "cross_border_fee": "1020.31"
+  },
+  {
+    "order_id": 61398080578,
+    "campaign_id": 148883560,
+    "offer_id": "2421406",
+    "quantity": 1,
+    "feed_weight": "0.80",
+    "cross_border_fee": "836.46"
+  },
+  {
+    "order_id": 61384452675,
+    "campaign_id": 148883560,
+    "offer_id": "935142",
+    "quantity": 1,
+    "feed_weight": "1.65",
+    "cross_border_fee": "1023.74"
+  },
+  {
+    "order_id": 61383942146,
+    "campaign_id": 148883560,
+    "offer_id": "3320780",
+    "quantity": 1,
+    "feed_weight": "0.17",
+    "cross_border_fee": "319.91"
+  },
+  {
+    "order_id": 61378039618,
+    "campaign_id": 148883560,
+    "offer_id": "1385781",
+    "quantity": 1,
+    "feed_weight": "0.55",
+    "cross_border_fee": "337.06"
+  },
+  {
+    "order_id": 61375652161,
+    "campaign_id": 148883560,
+    "offer_id": "2203061",
+    "quantity": 1,
+    "feed_weight": "0.50",
+    "cross_border_fee": "295.90"
+  },
+  {
+    "order_id": 61374992642,
+    "campaign_id": 148883560,
+    "offer_id": "2398902",
+    "quantity": 1,
+    "feed_weight": "0.50",
+    "cross_border_fee": "388.51"
+  },
+  {
+    "order_id": 61370608707,
+    "campaign_id": 148883560,
+    "offer_id": "2482711",
+    "quantity": 1,
+    "feed_weight": "0.30",
+    "cross_border_fee": "258.17"
+  },
+  {
+    "order_id": 61356893698,
+    "campaign_id": 148883560,
+    "offer_id": "1308276",
+    "quantity": 1,
+    "feed_weight": "0.88",
+    "cross_border_fee": "861.85"
+  },
+  {
+    "order_id": 61354441347,
+    "campaign_id": 148883560,
+    "offer_id": "2687396",
+    "quantity": 1,
+    "feed_weight": "0.20",
+    "cross_border_fee": "395.37"
+  },
+  {
+    "order_id": 61350130624,
+    "campaign_id": 148883560,
+    "offer_id": "2760062",
+    "quantity": 1,
+    "feed_weight": "1.50",
+    "cross_border_fee": "1086.17"
+  },
+  {
+    "order_id": 61347128962,
+    "campaign_id": 148883560,
+    "offer_id": "271916",
+    "quantity": 1,
+    "feed_weight": "0.79",
+    "cross_border_fee": "1042.95"
+  },
+  {
+    "order_id": 61335408385,
+    "campaign_id": 148883560,
+    "offer_id": "1267076",
+    "quantity": 1,
+    "feed_weight": "0.33",
+    "cross_border_fee": "484.55"
+  },
+  {
+    "order_id": 61331584129,
+    "campaign_id": 148883560,
+    "offer_id": "2610698",
+    "quantity": 1,
+    "feed_weight": "1.50",
+    "cross_border_fee": "1045.01"
+  },
+  {
+    "order_id": 61331421632,
+    "campaign_id": 148883560,
+    "offer_id": "2583158",
+    "quantity": 1,
+    "feed_weight": "1.05",
+    "cross_border_fee": "793.25"
+  },
+  {
+    "order_id": 61330449984,
+    "campaign_id": 148883560,
+    "offer_id": "3577573",
+    "quantity": 1,
+    "feed_weight": "0.72",
+    "cross_border_fee": "606.65"
+  },
+  {
+    "order_id": 61330291776,
+    "campaign_id": 148883560,
+    "offer_id": "348991",
+    "quantity": 1,
+    "feed_weight": "0.58",
+    "cross_border_fee": "1409.96"
+  },
+  {
+    "order_id": 61323477123,
+    "campaign_id": 148883560,
+    "offer_id": "701134",
+    "quantity": 1,
+    "feed_weight": "1.54",
+    "cross_border_fee": "848.81"
+  },
+  {
+    "order_id": 61320296643,
+    "campaign_id": 148883560,
+    "offer_id": "3924196",
+    "quantity": 1,
+    "feed_weight": "0.55",
+    "cross_border_fee": "376.16"
+  },
+  {
+    "order_id": 61319083713,
+    "campaign_id": 148883560,
+    "offer_id": "4245955",
+    "quantity": 1,
+    "feed_weight": "0.55",
+    "cross_border_fee": "570.30"
+  },
+  {
+    "order_id": 61315396481,
+    "campaign_id": 148883560,
+    "offer_id": "4183347",
+    "quantity": 1,
+    "feed_weight": "0.28",
+    "cross_border_fee": "484.55"
+  },
+  {
+    "order_id": 61315145730,
+    "campaign_id": 148883560,
+    "offer_id": "446718",
+    "quantity": 2,
+    "feed_weight": "0.03",
+    "cross_border_fee": "335.68"
+  },
+  {
+    "order_id": 61313936385,
+    "campaign_id": 148883560,
+    "offer_id": "411026",
+    "quantity": 1,
+    "feed_weight": "0.29",
+    "cross_border_fee": "409.09"
+  },
+  {
+    "order_id": 61312072833,
+    "campaign_id": 148883560,
+    "offer_id": "2711516",
+    "quantity": 1,
+    "feed_weight": "1.60",
+    "cross_border_fee": "1106.75"
+  },
+  {
+    "order_id": 61311118018,
+    "campaign_id": 148883560,
+    "offer_id": "1574120",
+    "quantity": 1,
+    "feed_weight": "1.76",
+    "cross_border_fee": "403.60"
+  },
+  {
+    "order_id": 61308348993,
+    "campaign_id": 148883560,
+    "offer_id": "3627264",
+    "quantity": 1,
+    "feed_weight": "0.55",
+    "cross_border_fee": "462.59"
+  },
+  {
+    "order_id": 61308138563,
+    "campaign_id": 148883560,
+    "offer_id": "4554174",
+    "quantity": 1,
+    "feed_weight": "0.50",
+    "cross_border_fee": "388.51"
+  },
+  {
+    "order_id": 61307137536,
+    "campaign_id": 148883560,
+    "offer_id": "2103000",
+    "quantity": 1,
+    "feed_weight": "0.60",
+    "cross_border_fee": "555.20"
+  },
+  {
+    "order_id": 61305959170,
+    "campaign_id": 148883560,
+    "offer_id": "1581829",
+    "quantity": 1,
+    "feed_weight": "1.00",
+    "cross_border_fee": "412.52"
+  },
+  {
+    "order_id": 61305050369,
+    "campaign_id": 148883560,
+    "offer_id": "3733233",
+    "quantity": 1,
+    "feed_weight": "1.00",
+    "cross_border_fee": "841.27"
+  },
+  {
+    "order_id": 61300789123,
+    "campaign_id": 148883560,
+    "offer_id": "2807053",
+    "quantity": 1,
+    "feed_weight": "1.32",
+    "cross_border_fee": "1204.85"
+  },
+  {
+    "order_id": 61297049409,
+    "campaign_id": 148883560,
+    "offer_id": "3356973",
+    "quantity": 1,
+    "feed_weight": "0.44",
+    "cross_border_fee": "505.13"
+  },
+  {
+    "order_id": 61295849602,
+    "campaign_id": 148883560,
+    "offer_id": "3271290",
+    "quantity": 1,
+    "feed_weight": "1.32",
+    "cross_border_fee": "968.18"
+  },
+  {
+    "order_id": 61295316993,
+    "campaign_id": 148883560,
+    "offer_id": "4055448",
+    "quantity": 1,
+    "feed_weight": "0.50",
+    "cross_border_fee": "439.96"
+  },
+  {
+    "order_id": 61293742082,
+    "campaign_id": 148883560,
+    "offer_id": "1794748",
+    "quantity": 1,
+    "feed_weight": "0.55",
+    "cross_border_fee": "383.70"
+  },
+  {
+    "order_id": 61292598465,
+    "campaign_id": 148883560,
+    "offer_id": "2241251",
+    "quantity": 1,
+    "feed_weight": "0.50",
+    "cross_border_fee": "321.96"
+  },
+  {
+    "order_id": 61291546371,
+    "campaign_id": 148883560,
+    "offer_id": "2868009",
+    "quantity": 1,
+    "feed_weight": "1.10",
+    "cross_border_fee": "1002.48"
+  },
+  {
+    "order_id": 61290900419,
+    "campaign_id": 148883560,
+    "offer_id": "2180500",
+    "quantity": 1,
+    "feed_weight": "1.65",
+    "cross_border_fee": "1318.72"
+  },
+  {
+    "order_id": 61290862851,
+    "campaign_id": 148883560,
+    "offer_id": "2822094",
+    "quantity": 1,
+    "feed_weight": "0.50",
+    "cross_border_fee": "357.64"
+  },
+  {
+    "order_id": 61290064515,
+    "campaign_id": 148883560,
+    "offer_id": "2464738",
+    "quantity": 1,
+    "feed_weight": "0.50",
+    "cross_border_fee": "317.85"
+  },
+  {
+    "order_id": 61286914050,
+    "campaign_id": 148883560,
+    "offer_id": "359109",
+    "quantity": 1,
+    "feed_weight": "1.00",
+    "cross_border_fee": "361.07"
+  },
+  {
+    "order_id": 61286836610,
+    "campaign_id": 148883560,
+    "offer_id": "2405626",
+    "quantity": 1,
+    "feed_weight": "0.44",
+    "cross_border_fee": "594.31"
+  },
+  {
+    "order_id": 61286693184,
+    "campaign_id": 148883560,
+    "offer_id": "1253275",
+    "quantity": 1,
+    "feed_weight": "0.55",
+    "cross_border_fee": "544.91"
+  },
+  {
+    "order_id": 61286164482,
+    "campaign_id": 148883560,
+    "offer_id": "1640192",
+    "quantity": 1,
+    "feed_weight": "0.25",
+    "cross_border_fee": "536.00"
+  },
+  {
+    "order_id": 61285326723,
+    "campaign_id": 148883560,
+    "offer_id": "3909037",
+    "quantity": 1,
+    "feed_weight": "0.50",
+    "cross_border_fee": "540.11"
+  },
+  {
+    "order_id": 61283134466,
+    "campaign_id": 148883560,
+    "offer_id": "2406338",
+    "quantity": 1,
+    "feed_weight": "1.00",
+    "cross_border_fee": "721.22"
+  },
+  {
+    "order_id": 61274765889,
+    "campaign_id": 148883560,
+    "offer_id": "1714781",
+    "quantity": 1,
+    "feed_weight": "0.33",
+    "cross_border_fee": "357.64"
+  },
+  {
+    "order_id": 61274207363,
+    "campaign_id": 148883560,
+    "offer_id": "415875",
+    "quantity": 1,
+    "feed_weight": "0.40",
+    "cross_border_fee": "280.80"
+  },
+  {
+    "order_id": 61268573184,
+    "campaign_id": 148883560,
+    "offer_id": "801258",
+    "quantity": 1,
+    "feed_weight": "1.65",
+    "cross_border_fee": "1132.13"
+  },
+  {
+    "order_id": 61265825089,
+    "campaign_id": 148883560,
+    "offer_id": "2033987",
+    "quantity": 1,
+    "feed_weight": "0.55",
+    "cross_border_fee": "304.13"
+  },
+  {
+    "order_id": 61263318339,
+    "campaign_id": 148883560,
+    "offer_id": "679011",
+    "quantity": 1,
+    "feed_weight": "1.65",
+    "cross_border_fee": "1173.98"
+  },
+  {
+    "order_id": 61262949955,
+    "campaign_id": 148883560,
+    "offer_id": "2461772",
+    "quantity": 1,
+    "feed_weight": "0.55",
+    "cross_border_fee": "553.15"
+  },
+  {
+    "order_id": 61262819712,
+    "campaign_id": 148883560,
+    "offer_id": "697156",
+    "quantity": 1,
+    "feed_weight": "1.32",
+    "cross_border_fee": "1077.94"
+  },
+  {
+    "order_id": 61262413760,
+    "campaign_id": 148883560,
+    "offer_id": "408112",
+    "quantity": 1,
+    "feed_weight": "0.30",
+    "cross_border_fee": "323.34"
+  },
+  {
+    "order_id": 61256567937,
+    "campaign_id": 148883560,
+    "offer_id": "2634752",
+    "quantity": 1,
+    "feed_weight": "0.83",
+    "cross_border_fee": "765.81"
+  },
+  {
+    "order_id": 61252041986,
+    "campaign_id": 148883560,
+    "offer_id": "3928174",
+    "quantity": 1,
+    "feed_weight": "1.32",
+    "cross_border_fee": "1038.15"
+  },
+  {
+    "order_id": 61250201345,
+    "campaign_id": 148883560,
+    "offer_id": "233430",
+    "quantity": 1,
+    "feed_weight": "0.86",
+    "cross_border_fee": "525.02"
+  },
+  {
+    "order_id": 61249453889,
+    "campaign_id": 148883560,
+    "offer_id": "2783817",
+    "quantity": 1,
+    "feed_weight": "0.50",
+    "cross_border_fee": "514.04"
+  },
+  {
+    "order_id": 61248376001,
+    "campaign_id": 148883560,
+    "offer_id": "2107808",
+    "quantity": 1,
+    "feed_weight": "1.32",
+    "cross_border_fee": "1173.98"
+  },
+  {
+    "order_id": 61245806851,
+    "campaign_id": 148883560,
+    "offer_id": "4646311",
+    "quantity": 1,
+    "feed_weight": "0.99",
+    "cross_border_fee": "880.37"
+  },
+  {
+    "order_id": 61242075905,
+    "campaign_id": 148883560,
+    "offer_id": "3175701",
+    "quantity": 1,
+    "feed_weight": "1.21",
+    "cross_border_fee": "1057.36"
+  },
+  {
+    "order_id": 61240220096,
+    "campaign_id": 148883560,
+    "offer_id": "1439559",
+    "quantity": 1,
+    "feed_weight": "1.10",
+    "cross_border_fee": "837.84"
+  },
+  {
+    "order_id": 61232657091,
+    "campaign_id": 148883560,
+    "offer_id": "3991876",
+    "quantity": 1,
+    "feed_weight": "1.50",
+    "cross_border_fee": "611.46"
+  },
+  {
+    "order_id": 61230209152,
+    "campaign_id": 148883560,
+    "offer_id": "406660",
+    "quantity": 1,
+    "feed_weight": "0.75",
+    "cross_border_fee": "590.88"
+  },
+  {
+    "order_id": 61224912640,
+    "campaign_id": 148883560,
+    "offer_id": "604625",
+    "quantity": 1,
+    "feed_weight": "1.76",
+    "cross_border_fee": "374.79"
+  },
+  {
+    "order_id": 61223707201,
+    "campaign_id": 148883560,
+    "offer_id": "604997",
+    "quantity": 1,
+    "feed_weight": "1.65",
+    "cross_border_fee": "915.35"
+  },
+  {
+    "order_id": 61220349889,
+    "campaign_id": 148883560,
+    "offer_id": "1302325",
+    "quantity": 1,
+    "feed_weight": "0.55",
+    "cross_border_fee": "319.91"
+  },
+  {
+    "order_id": 61212242818,
+    "campaign_id": 148883560,
+    "offer_id": "4762988",
+    "quantity": 1,
+    "feed_weight": "0.50",
+    "cross_border_fee": "350.78"
+  },
+  {
+    "order_id": 61210413505,
+    "campaign_id": 148883560,
+    "offer_id": "2696162",
+    "quantity": 1,
+    "feed_weight": "1.65",
+    "cross_border_fee": "1095.77"
+  },
+  {
+    "order_id": 61195257856,
+    "campaign_id": 148883560,
+    "offer_id": "307487",
+    "quantity": 1,
+    "feed_weight": "1.54",
+    "cross_border_fee": "1117.04"
+  },
+  {
+    "order_id": 61191991297,
+    "campaign_id": 148883560,
+    "offer_id": "1373850",
+    "quantity": 1,
+    "feed_weight": "0.55",
+    "cross_border_fee": "361.07"
+  },
+  {
+    "order_id": 61191548482,
+    "campaign_id": 148883560,
+    "offer_id": "724552",
+    "quantity": 1,
+    "feed_weight": "1.50",
+    "cross_border_fee": "942.79"
+  },
+  {
+    "order_id": 61189814339,
+    "campaign_id": 148883560,
+    "offer_id": "4063829",
+    "quantity": 1,
+    "feed_weight": "0.66",
+    "cross_border_fee": "879.00"
+  },
+  {
+    "order_id": 61186516480,
+    "campaign_id": 148883560,
+    "offer_id": "449108",
+    "quantity": 1,
+    "feed_weight": "1.00",
+    "cross_border_fee": "409.09"
+  },
+  {
+    "order_id": 61185484993,
+    "campaign_id": 148883560,
+    "offer_id": "2061853",
+    "quantity": 1,
+    "feed_weight": "0.50",
+    "cross_border_fee": "398.80"
+  },
+  {
+    "order_id": 61183816321,
+    "campaign_id": 148883560,
+    "offer_id": "412043",
+    "quantity": 1,
+    "feed_weight": "0.76",
+    "cross_border_fee": "1132.82"
+  },
+  {
+    "order_id": 61182043520,
+    "campaign_id": 148883560,
+    "offer_id": "1417552",
+    "quantity": 1,
+    "feed_weight": "0.55",
+    "cross_border_fee": "381.65"
+  },
+  {
+    "order_id": 61181902658,
+    "campaign_id": 148883560,
+    "offer_id": "415876",
+    "quantity": 1,
+    "feed_weight": "1.21",
+    "cross_border_fee": "509.93"
+  },
+  {
+    "order_id": 61177661121,
+    "campaign_id": 148883560,
+    "offer_id": "4117734",
+    "quantity": 1,
+    "feed_weight": "0.30",
+    "cross_border_fee": "340.49"
+  },
+  {
+    "order_id": 61177120448,
+    "campaign_id": 148883560,
+    "offer_id": "1782279",
+    "quantity": 1,
+    "feed_weight": "0.55",
+    "cross_border_fee": "584.02"
+  },
+  {
+    "order_id": 61172417857,
+    "campaign_id": 148883560,
+    "offer_id": "451226",
+    "quantity": 1,
+    "feed_weight": "1.50",
+    "cross_border_fee": "1208.28"
+  },
+  {
+    "order_id": 61164796482,
+    "campaign_id": 148883560,
+    "offer_id": "1370918",
+    "quantity": 1,
+    "feed_weight": "0.55",
+    "cross_border_fee": "438.58"
+  },
+  {
+    "order_id": 61164569728,
+    "campaign_id": 148883560,
+    "offer_id": "1419804",
+    "quantity": 1,
+    "feed_weight": "0.22",
+    "cross_border_fee": "350.78"
+  },
+  {
+    "order_id": 61162875458,
+    "campaign_id": 148883560,
+    "offer_id": "985900",
+    "quantity": 1,
+    "feed_weight": "0.30",
+    "cross_border_fee": "337.06"
+  },
+  {
+    "order_id": 61151512320,
+    "campaign_id": 148883560,
+    "offer_id": "1302337",
+    "quantity": 1,
+    "feed_weight": "0.55",
+    "cross_border_fee": "318.53"
+  },
+  {
+    "order_id": 61151386752,
+    "campaign_id": 148883560,
+    "offer_id": "2568037",
+    "quantity": 1,
+    "feed_weight": "0.50",
+    "cross_border_fee": "395.37"
+  },
+  {
+    "order_id": 61146610179,
+    "campaign_id": 148883560,
+    "offer_id": "329529",
+    "quantity": 1,
+    "feed_weight": "1.32",
+    "cross_border_fee": "1081.37"
+  },
+  {
+    "order_id": 61140582467,
+    "campaign_id": 148883560,
+    "offer_id": "722167",
+    "quantity": 1,
+    "feed_weight": "1.50",
+    "cross_border_fee": "1157.51"
+  }
+]

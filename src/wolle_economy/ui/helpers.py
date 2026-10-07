@@ -16,18 +16,19 @@ from wolle_economy.domain.loader import (
     MarketplaceSpec,
     get_marketplace_spec,
 )
+from wolle_economy.domain.economics import aggregate_yandex_orders
 
 logger = logging.getLogger(__name__)
 
 
 def orders_dedup(df: pd.DataFrame) -> pd.DataFrame:
     """Возвращает DataFrame с одной строкой на заказ (совместимость по ya_order_id)."""
-    return df.drop_duplicates(subset="ya_order_id")
+    return aggregate_yandex_orders(df)
 
 
 def orders_dedup_by_key(df: pd.DataFrame, order_key: str) -> pd.DataFrame:
     """Возвращает DataFrame с одной строкой на заказ по заданному order key."""
-    return df.drop_duplicates(subset=order_key)
+    return aggregate_yandex_orders(df) if order_key == "ya_order_id" and "our_margin" in df else df.drop_duplicates(subset=order_key)
 
 
 def dedup_for_marketplace(df: pd.DataFrame, spec: MarketplaceSpec) -> pd.DataFrame:

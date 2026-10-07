@@ -14,8 +14,8 @@ def tab_cashflow(df: pd.DataFrame) -> None:
     pending = od[~od.index.isin(received.index) & ~od["is_cancelled_any"]]
 
     c = st.columns(4)
-    c[0].metric("Получено всего", fmt_money(received["expected_payout"].sum()))
-    c[1].metric("Ожидается выплата", fmt_money(pending["expected_payout"].sum()))
+    c[0].metric("Денежные выплаты по оплаченным заказам", fmt_money(received["cash_payout"].sum()))
+    c[1].metric("Ожидается деньгами (расчёт)", fmt_money(pending["cash_payout"].sum()))
     c[2].metric("Заказов в ожидании", f"{len(pending):,}".replace(",", " "))
 
     avg_lag = od["pay_lag_days"].dropna()
@@ -27,7 +27,7 @@ def tab_cashflow(df: pd.DataFrame) -> None:
         pending.groupby("seller_name", observed=True)
         .agg(
             заказов=("ya_order_id", "nunique"),
-            ожидается=("expected_payout", "sum"),
+            ожидается=("cash_payout", "sum"),
         )
         .reset_index()
         .sort_values("ожидается", ascending=False)

@@ -6,14 +6,14 @@
 - sell_price          = из ya_order_margin_report — цена, которую ЯМ фиксирует как продажу
                         = buyer_payment + субсидия_ЯМ (баллы Маркета/Плюса) за весь заказ
 - market_services     = из ya_order_margin_report — комиссии ЯМ за заказ
-- expected_payout     = sell_price - market_services — фактический перевод от ЯМ
+- expected_payout     = sell_price - market_services — доход до списаний баллов
 - bonus_points        = субсидия ЯМ (tr.bonuses = subsidy) — СПРАВОЧНО, уже в sell_price!
                         НЕ прибавлять к прибыли — иначе двойной счёт.
 - promo_discounts     = наши расходы на промо из баланса баллов (отрицательная сумма)
                         Вычитаются из дохода отдельно (settlement через баланс баллов)
 - our_costs           = base_price + ff_fee + socket_adapter + custom_delivery
                         (за доставленное количество)
-- expected_profit     = expected_payout - our_costs - planned_boost (без промо)
+- expected_profit     = прибыль сохранённого плана публикации, иначе целевая наценка
 - profit              = expected_payout + promo_discounts + boost_wallet_spend - our_costs
 - fact_commissions    = реальные удержания ЯМ из платёжного отчёта ≈ market_services
 """
@@ -37,6 +37,121 @@ def merge_with_payments(orders_df: pd.DataFrame, payments_df: pd.DataFrame) -> p
         on="ya_order_id",
         how="left",
     )
+
+
+def _allocate_order_amounts(df: pd.DataFrame) -> pd.DataFrame:
+    """Общие суммы заказа распределяем по выручке, не дублируем в каждой позиции.
+
+    Распределение услуг — оценка для позиции. Сумма по заказу сохраняется точно.
+    Списания из wallet_sku уже привязаны к позиции SQL-запросом и не распределяются.
+    """
+    df["order_costs_allocated"] = False
+    df["order_cost_share"] = 1.0
+    if "ya_order_id" not in df:
+        return df
+    for _, indices in df.groupby("ya_order_id", sort=False).groups.items():
+        if len(indices) < 2:
+            continue
+        group = df.loc[indices]
+        weights = ((group["buyer_price"].fillna(0) + group["subsidy"].fillna(0))
+                   * group["quantity"].fillna(1)).astype(float).clip(lower=0)
+        shares = weights / weights.sum() if weights.sum() > 0 else pd.Series(1 / len(group),index=indices)
+        shared_columns = ["sell_price", "market_services", "promo_discounts", "boost_wallet_spend", "fact_commissions"]
+        shared_columns += [name for name in df if name.startswith("fact_") and name.endswith("_fee")]
+        shared_columns += ["fact_other_fees", "fact_unclassified_fees"]
+        for column in dict.fromkeys(shared_columns):
+            if column not in df:
+                continue
+            values = pd.to_numeric(group[column],errors="coerce").astype(float).dropna()
+            if values.empty:
+                continue
+            # Общий отчёт/платёжный агрегат одинаков в JOIN каждой позиции.
+            df[column] = pd.to_numeric(df[column],errors="coerce").astype(float)
+            df.loc[indices,column] = shares * values.iloc[0]
+        if "report_service_details" in df:
+            details = next((value for value in group["report_service_details"] if isinstance(value,dict)),None)
+            if details is not None:
+                for index in indices:
+                    df.at[index,"report_service_details"] = {key:float(value or 0)*shares.loc[index] for key,value in details.items()}
+        df.loc[indices,"order_costs_allocated"] = True
+        df.loc[indices,"order_cost_share"] = shares
+    return df
+
+
+def aggregate_yandex_orders(df: pd.DataFrame) -> pd.DataFrame:
+    """Итоги заказа: суммы позиций, затем пересчёт процентов от общей базы."""
+    if df.empty:
+        return df.copy()
+    result = df.drop_duplicates("ya_order_id").copy().set_index("ya_order_id",drop=False)
+    totals = {"quantity","sell_price","market_services","promo_discounts","boost_wallet_spend",
+              "bonus_points","our_margin","price_with_margin","our_costs","expected_profit","legacy_floor_profit",
+              "expected_payout","profit","profit_no_promo","actual_profit","payout_if_paid",
+              "profit_vs_expected","income_after_fees","income_after_fees_promo","diff_from_min_price",
+              "fact_commissions","calc_commissions","commissions_diff","full_market_services",
+              "cash_payout","wallet_balance_change"}
+    totals.update(column for column in df if column.endswith(("_total","_diff")))
+    totals.update(column for column in df if column.startswith("fact_") and column.endswith(("_fee","_fees","_spend")))
+    for column in totals.intersection(df.columns):
+        result[column] = df.groupby("ya_order_id",sort=False)[column].sum(min_count=1)
+    for flag in ("order_costs_allocated","economics_is_estimated","is_returned","is_cancelled_any"):
+        if flag in df:
+            result[flag] = df.groupby("ya_order_id",sort=False)[flag].any()
+    result["margin_pct"] = (result["profit"] / result["sell_price"].replace(0,np.nan)*100).round(2)
+    result["margin_fact_pct"] = result["margin_pct"]
+    result["margin_fact_rub"] = result["profit"]
+    result["margin_plan_pct"] = (result["our_margin"] / result["sell_price"].replace(0,np.nan)*100).round(2)
+    result["margin_plan_on_cost_pct"] = (result["our_margin"] / result["base_price_total"].replace(0,np.nan)*100).round(2)
+    result["margin_fact_on_cost_pct"] = (result["profit"] / result["effective_purchase_total"].replace(0,np.nan)*100).round(2)
+    result["take_rate_pct"] = (result["market_services"] / result["sell_price"].replace(0,np.nan)*100).round(2)
+    result["is_loss"] = result["profit"] < 0
+    return result.reset_index(drop=True)
+
+
+def _apply_pricing_snapshot(df: pd.DataFrame) -> pd.DataFrame:
+    """Полный план публикации имеет приоритет над повторным расчётом уведомления."""
+    snapshots = df.get("pricing_snapshot", pd.Series(None, index=df.index, dtype=object))
+    def is_complete(value):
+        if not isinstance(value, dict) or value.get("calculation_version") != "yandex-v2-full-fees" or value.get("snapshot_source") == "order_recalculation":
+            return False
+        try:
+            for number in (value["source"]["purchase_price_rub"], value["margin"]["markup_percent"],
+                           value["prices"]["target_price"], value["prices"]["minimum_allowed_price"]):
+                if not np.isfinite(float(number)):
+                    return False
+            return isinstance(value["components"], list) and all(
+                isinstance(component, dict) and isinstance(component["code"], str)
+                and np.isfinite(float(component["amount"])) for component in value["components"])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return False
+    complete = snapshots.map(is_complete)
+    df["plan_snapshot_complete"] = complete
+    df["snapshot_expected_profit_unit"] = np.nan
+    df["snapshot_shipping_fixed"] = 0.0
+    if complete.any():
+        for field in ("base_price", "margin_percent", "min_sell_price", "ff_fee", "socket_adapter_fee",
+                      "custom_delivery_fee", "calc_category_fee", "calc_transfer_fee",
+                      "calc_accepting_payment_fee", "calc_order_processing_fee", "planned_boost_amount", "calc_delivery_fee"):
+            df[field] = pd.to_numeric(df.get(field, pd.Series(np.nan, index=df.index)), errors="coerce").astype(float)
+    for index in df.index[complete]:
+        snapshot = snapshots.loc[index]
+        components = {c["code"]: float(c["amount"]) for c in snapshot["components"]}
+        purchase = float(snapshot["source"]["purchase_price_rub"])
+        price = float(snapshot["prices"]["target_price"])
+        df.loc[index, "base_price"] = purchase
+        df.loc[index, "margin_percent"] = float(snapshot["margin"]["markup_percent"])
+        df.loc[index, "min_sell_price"] = float(snapshot["prices"]["minimum_allowed_price"])
+        fields = {
+            "ff_fee": "ff", "socket_adapter_fee": "socket_adapter",
+            "custom_delivery_fee": "custom_delivery", "calc_category_fee": "category_commission",
+            "calc_transfer_fee": "transfer_commission", "calc_accepting_payment_fee": "accepting_payment",
+            "calc_order_processing_fee": "order_processing", "planned_boost_amount": "boost",
+        }
+        for field, code in fields.items():
+            df.loc[index, field] = components.get(code, 0)
+        df.loc[index, "calc_delivery_fee"] = sum(components.get(code, 0) for code in ("delivery", "middle_mile", "cross_border"))
+        df.loc[index, "snapshot_expected_profit_unit"] = price - purchase - sum(amount for code, amount in components.items() if code != "margin")
+        df.loc[index, "snapshot_shipping_fixed"] = float(snapshot.get("decision",{}).get("metadata",{}).get("cross_border_fixed_per_order",0))
+    return df
 
 
 def _apply_payment_refund_fallback(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
@@ -145,6 +260,18 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
     df["calc_delivery_fee_total"] = planned_total("calc_delivery_fee")
     df["calc_accepting_payment_fee_total"] = planned_total("calc_accepting_payment_fee")
     df["calc_order_processing_fee_total"] = planned_total("calc_order_processing_fee")
+    df["snapshot_fixed_fee_savings"] = 0.0
+    complete = df.get("plan_snapshot_complete",pd.Series(False,index=df.index)).fillna(False)
+    if complete.any():
+        sku_count = (df.groupby(["ya_order_id","offer_id"])["offer_id"].transform("size")
+                     if "ya_order_id" in df and "offer_id" in df else pd.Series(1,index=df.index))
+        accepting = pd.to_numeric(df["calc_accepting_payment_fee"],errors="coerce").fillna(0) / sku_count
+        accepting_savings = df["calc_accepting_payment_fee_total"] - accepting
+        df["calc_accepting_payment_fee_total"] = df["calc_accepting_payment_fee_total"].where(~complete,accepting)
+        fixed = df.get("snapshot_shipping_fixed",pd.Series(0,index=df.index))
+        shipping_savings = fixed * (q-df.get("order_cost_share",pd.Series(1,index=df.index)))
+        df["calc_delivery_fee_total"] -= shipping_savings.where(complete,0)
+        df["snapshot_fixed_fee_savings"] = (accepting_savings+shipping_savings).where(complete,0)
     planned_columns = [
         "calc_category_fee_total",
         "calc_transfer_fee_total",
@@ -360,7 +487,18 @@ def _compute_profits(df: pd.DataFrame, our_costs: pd.Series) -> pd.DataFrame:
         df.get("boost_wallet_spend", pd.Series(0.0, index=df.index)),
         errors="coerce",
     ).fillna(0)  # debit is negative
-    df["expected_profit"] = df["expected_payout"] - our_costs - planned_boost
+    # Целевая прибыль задаётся на закупку при публикации цены. Фактические
+    # удержания и списания баллов не должны менять исторический план.
+    df["expected_profit"] = df["our_margin"]
+    snapshot_profit = pd.to_numeric(df.get("snapshot_expected_profit_unit", pd.Series(np.nan, index=df.index)), errors="coerce")
+    df["expected_profit"] = df["expected_profit"].where(snapshot_profit.isna(), snapshot_profit * df["quantity"].fillna(1)+df.get("snapshot_fixed_fee_savings",0))
+    df["legacy_floor_profit"] = (
+        df["min_sell_price_total"] - df["calc_commissions"] - planned_boost
+        - df["base_price_total"] - df["ff_fee_total"]
+        - df["socket_adapter_total"] - df["custom_delivery_fee_total"]
+    )
+    complete = df.get("plan_snapshot_complete", pd.Series(False, index=df.index)).fillna(False).astype(bool)
+    df["legacy_floor_profit"] = df["legacy_floor_profit"].where(~complete)
 
     promo = df["promo_discounts"].fillna(0)  # отрицательная сумма
     df["income_after_fees"] = df["expected_payout"]
@@ -368,6 +506,12 @@ def _compute_profits(df: pd.DataFrame, our_costs: pd.Series) -> pd.DataFrame:
 
     df["profit"] = df["income_after_fees_promo"] - our_costs
     df["profit_no_promo"] = df["income_after_fees"] + boost_wallet_spend - our_costs
+    df["full_market_services"] = df["market_services"].fillna(0) - promo - boost_wallet_spend
+    # Денежная выплата и доход с учётом бонусного баланса — разные величины.
+    # Это реконструкция из отчёта, а не подтверждённая банковская выписка.
+    df["cash_payout"] = df["sell_price"].fillna(0) - df["bonus_points"] - df["market_services"].fillna(0)
+    df["wallet_balance_change"] = df["bonus_points"] + promo + boost_wallet_spend
+    df["economics_is_estimated"] = ~df["uses_fact_purchase_price"]
 
     df["diff_from_min_price"] = df["sell_price"].fillna(0) - df["min_sell_price_total"]
     return df
@@ -463,8 +607,7 @@ def _compute_flags_and_lags(df: pd.DataFrame) -> pd.DataFrame:
         df.get("calc_boost_fee_total", pd.Series(0.0, index=df.index)),
         errors="coerce",
     ).fillna(0)
-    planned_margin_net_boost = df["our_margin"] - planned_boost
-    df["our_margin"] = planned_margin_net_boost
+    planned_margin_net_boost = df["our_margin"]
     df["margin_plan_pct"] = (planned_margin_net_boost / sp * 100).round(2)
     df["margin_fact_pct"] = df["margin_pct"]
     df["margin_fact_rub"] = df["profit"]
@@ -474,7 +617,9 @@ def _compute_flags_and_lags(df: pd.DataFrame) -> pd.DataFrame:
     # Факт: profit / base_price_total → «сколько реально заработали сверх закупки».
     bp = df["base_price_total"].replace(0, np.nan)
     df["margin_plan_on_cost_pct"] = (planned_margin_net_boost / bp * 100).round(2)
-    df["margin_fact_on_cost_pct"] = (df["profit"] / bp * 100).round(2)
+    df["margin_fact_on_cost_pct"] = (
+        df["profit"] / df["effective_purchase_total"].replace(0, np.nan) * 100
+    ).round(2)
 
     df["is_cancelled_before"] = df["fulfillment_status"].isin(CANCELLED_BEFORE_SHIP)
     df["is_returned"] = df["fulfillment_status"].isin(RETURNED_STATUSES)
@@ -497,6 +642,8 @@ def calc_economics(df: pd.DataFrame) -> pd.DataFrame:
     Входной df должен содержать колонки из ORDER_ITEMS_SQL + PAYMENT_AGGREGATES_SQL.
     """
     df = df.copy()
+    df = _allocate_order_amounts(df)
+    df = _apply_pricing_snapshot(df)
     q = df["quantity"].fillna(1)
     df = _apply_payment_refund_fallback(df, q)
 
