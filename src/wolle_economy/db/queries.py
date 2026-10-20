@@ -801,12 +801,15 @@ _MM_PR_AGG = """
 # company_debt — что ММ должен нам, seller_debt — удержания (комиссии).
 # net = company_debt − seller_debt = фактически перечисленная сумма по заказу.
 # НДС на incentive вычитается на уровне мерчанта, не попадает в per-order строки.
+# «Без оплаты» — ежедневные накопительные снимки плана: один shipment повторяется
+# десятки раз, поэтому в фактическую выплату они не входят.
 _MM_FR_AGG = """
     SELECT
         shipment_id,
         SUM(COALESCE(company_debt, 0)) - SUM(COALESCE(seller_debt, 0)) AS fr_net_payout
     FROM e_com.mm_financial_report
     WHERE shipment_id IS NOT NULL
+      AND filename NOT ILIKE '%Без оплаты%'
     GROUP BY shipment_id
 """
 

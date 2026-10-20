@@ -38,6 +38,7 @@ from wolle_economy.db.queries import (
     build_supplier_price_fact_query,
     build_wb_order_items_query,
 )
+from wolle_economy.domain.bank_overlay import attach_bank_status
 from wolle_economy.domain.economics import calc_economics, merge_with_payments
 from wolle_economy.domain.economics_mm import calc_mm_economics
 from wolle_economy.domain.economics_oz import calc_oz_economics
@@ -205,7 +206,9 @@ def _load_ym_orders_impl(
         len(supplier_prices),
     )
     orders = orders.merge(supplier_prices, on="item_id", how="left")
-    result = calc_economics(merge_with_payments(orders, payments))
+    result = attach_bank_status(
+        calc_economics(merge_with_payments(orders, payments)), "ym"
+    )
     return (
         result.loc[result["offer_id"].astype(str).eq(str(offer_id))]
         if offer_id is not None
@@ -291,7 +294,9 @@ def _load_mm_orders_impl(
     if "poizon_price" not in df_dbs.columns:
         df_dbs["poizon_price"] = np.nan
 
-    return calc_mm_economics(pd.concat([df_dbs, df_poizon], ignore_index=True))
+    return attach_bank_status(
+        calc_mm_economics(pd.concat([df_dbs, df_poizon], ignore_index=True)), "mm"
+    )
 
 
 @st.cache_data(ttl=get_settings().cache_ttl, show_spinner=False)
@@ -361,7 +366,7 @@ def _load_sm_orders_impl(
         raise
 
     logger.info("Загружено строк SM: %d", len(orders))
-    return calc_sm_economics(orders)
+    return attach_bank_status(calc_sm_economics(orders), "sm")
 
 
 @st.cache_data(ttl=get_settings().cache_ttl, show_spinner=False)
@@ -431,7 +436,7 @@ def _load_wb_orders_impl(
         raise
 
     logger.info("Загружено строк WB: %d", len(orders))
-    return calc_wb_economics(orders)
+    return attach_bank_status(calc_wb_economics(orders), "wb")
 
 
 @st.cache_data(ttl=get_settings().cache_ttl, show_spinner=False)
@@ -501,7 +506,7 @@ def _load_oz_orders_impl(
         raise
 
     logger.info("Загружено строк OZ: %d", len(orders))
-    return calc_oz_economics(orders)
+    return attach_bank_status(calc_oz_economics(orders), "oz")
 
 
 @st.cache_data(ttl=get_settings().cache_ttl, show_spinner=False)

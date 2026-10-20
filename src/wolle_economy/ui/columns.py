@@ -112,6 +112,14 @@ COLUMN_LABELS: dict[str, str] = {
     "expected_payout": "Доход до списаний баллов (включая субсидию)",
     "last_payment_date": "Дата выплаты",
     "actual_profit": "Фактическая прибыль",
+    "bank_status": "Статус оплаты (банк)",
+    "bank_txn_id": "ID банковской операции",
+    "bank_registry_ref": "Реестр/док. банка",
+    "bank_match_type": "Тип мэтча банка",
+    "bank_confidence": "Уверенность банка",
+    "bank_amount": "Сумма по банку",
+    "bank_amount_src": "Источник суммы (банк)",
+    "bank_date": "Дата по банку",
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -173,6 +181,14 @@ MM_COLUMN_LABELS: dict[str, str] = {
     "deduction_date": "Дата списания",
     "actual_profit": "Фактическая прибыль",
     "our_costs": "Наши затраты",
+    "bank_status": "Статус оплаты (банк)",
+    "bank_txn_id": "ID банковской операции",
+    "bank_registry_ref": "Реестр/док. банка",
+    "bank_match_type": "Тип мэтча банка",
+    "bank_confidence": "Уверенность банка",
+    "bank_amount": "Сумма по банку",
+    "bank_amount_src": "Источник суммы (банк)",
+    "bank_date": "Дата по банку",
 }
 
 MM_DISPLAY_COLUMNS: list[str] = [
@@ -229,6 +245,11 @@ MM_DISPLAY_COLUMNS: list[str] = [
     "last_payment_date",
     "deduction_date",
     "actual_profit",
+    "bank_status",
+    "bank_registry_ref",
+    "bank_confidence",
+    "bank_amount",
+    "bank_date",
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -348,6 +369,11 @@ DISPLAY_COLUMNS: list[str] = [
     "expected_payout",
     "last_payment_date",
     "actual_profit",
+    "bank_status",
+    "bank_registry_ref",
+    "bank_confidence",
+    "bank_amount",
+    "bank_date",
 ]
 
 

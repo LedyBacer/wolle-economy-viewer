@@ -12,7 +12,6 @@ _MM_TECHNICAL_COLUMNS = {
     "profit_no_promo",
     "profit_vs_expected",
     "diff_from_min_price",
-    "payout_if_paid",
     "offer_id",
     "cdek_status",
     "item_status",
@@ -30,7 +29,7 @@ _MM_COLUMN_CONFIG: dict = {}
 for _col, _label in MM_COLUMN_LABELS.items():
     if _col in {"created_at", "delivered_at"}:
         _MM_COLUMN_CONFIG[_label] = st.column_config.DatetimeColumn(format="DD.MM.YYYY HH:mm")
-    elif _col in {"last_payment_date", "deduction_date"}:
+    elif _col in {"last_payment_date", "deduction_date", "bank_date"}:
         _MM_COLUMN_CONFIG[_label] = st.column_config.DatetimeColumn(format="DD.MM.YYYY")
     elif _col in {"margin_plan_pct", "margin_fact_pct", "margin_plan_on_cost_pct", "margin_fact_on_cost_pct"}:
         _MM_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_PCT_FMT)
@@ -68,6 +67,7 @@ for _col, _label in MM_COLUMN_LABELS.items():
         "actual_profit",
         "margin_fact_rub",
         "our_costs",
+        "bank_amount",
     }:
         _MM_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_MONEY_FMT)
 

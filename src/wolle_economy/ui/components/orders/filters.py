@@ -91,6 +91,17 @@ def sidebar_memory_filters_for(
         else:
             sel_channels = None
 
+        if "bank_status" in df.columns:
+            bank_statuses = sorted(df["bank_status"].dropna().unique())
+            sel_bank = st.multiselect(
+                "Статус оплаты (банк)",
+                bank_statuses,
+                default=bank_statuses,
+                key=f"{key_prefix}_bank",
+            )
+        else:
+            sel_bank = None
+
         offer_q = st.text_input(offer_label, key=f"{key_prefix}_offer")
         supplier_q = (
             st.text_input(supplier_label, key=f"{key_prefix}_supplier")
@@ -101,6 +112,8 @@ def sidebar_memory_filters_for(
     mask = df["fulfillment_status"].isin(sel_statuses) & payment_status_for_filter.isin(sel_pay)
     if sel_channels is not None:
         mask &= df["channel"].isin(sel_channels)
+    if sel_bank is not None:
+        mask &= df["bank_status"].isin(sel_bank)
     if offer_q:
         mask &= df["offer_id"].str.contains(offer_q, case=False, na=False)
     if supplier_q:

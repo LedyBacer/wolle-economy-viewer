@@ -50,7 +50,7 @@ _COLUMN_CONFIG: dict = {}
 for _col, _label in COLUMN_LABELS.items():
     if _col in {"created_at"}:
         _COLUMN_CONFIG[_label] = st.column_config.DatetimeColumn(format="DD.MM.YYYY HH:mm")
-    elif _col in {"shipment_date", "last_payment_date"}:
+    elif _col in {"shipment_date", "last_payment_date", "bank_date"}:
         _COLUMN_CONFIG[_label] = st.column_config.DatetimeColumn(format="DD.MM.YYYY")
     elif _col in {
         "margin_plan_pct",
@@ -109,6 +109,8 @@ for _col, _label in COLUMN_LABELS.items():
         "expected_payout",
         "actual_profit",
         "margin_fact_rub",
+        "bank_amount",
+        "bank_confidence",
     }:
         _COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_MONEY_FMT)
 
