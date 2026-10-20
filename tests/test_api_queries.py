@@ -78,7 +78,11 @@ def test_yandex_order_query_selects_fixed_fee_snapshots() -> None:
     assert "b.transaction_type IN ('Списание', 'Возврат списания')" in query
     assert "history.boost_percent" in query
     assert "history.boost_amount" in query
-    assert "LEFT JOIN LATERAL" in query
+    # Снимок тарифов: DISTINCT ON в MATERIALIZED CTE вместо LATERAL (~50s → проход),
+    # см. _PRICE_SNAPSHOT_CTE в db/queries.py.
+    assert "price_snapshot AS MATERIALIZED" in query
+    assert "SELECT DISTINCT ON (i2.id)" in query
+    assert "LEFT JOIN price_snapshot" in query
 
 
 def test_payment_query_classifies_fact_commission_details() -> None:

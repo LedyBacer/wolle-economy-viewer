@@ -64,11 +64,36 @@ def _build_common_filters(
     return conditions, params
 
 
+# Снимок тарифов на момент создания заказа.
+# Раньше это был LATERAL: 49 616 циклов index-scan по yandex_price_history
+# (по 55 строк на цикл, 54 из них отбрасывал фильтр campaign_id) — ~50s и 4 ГБ
+# чтений. DISTINCT ON в MATERIALIZED CTE даёт ту же строку одним проходом.
+# {where} подставляется фильтрами заказа в build_order_items_query (алиасы o2/i2).
+_PRICE_SNAPSHOT_CTE = """
+price_snapshot AS MATERIALIZED (
+    SELECT DISTINCT ON (i2.id)
+        i2.id                                 AS order_item_id,
+        history.boost_percent,
+        history.boost_amount,
+        to_jsonb(history)->'pricing_snapshot' AS pricing_snapshot
+    FROM e_com.ya_order_items i2
+    JOIN e_com.ya_orders o2
+      ON o2.id = i2.order_id
+    JOIN e_com.yandex_price_history history
+      ON history.feed_item_id = i2.feed_item_id
+     AND history.campaign_id = o2.campaign_id
+     AND history.start_date <= o2.created_at
+     AND (history.end_date IS NULL OR o2.created_at < history.end_date){where}
+    ORDER BY i2.id, history.start_date DESC, history.id DESC
+),
+"""
+
+
 # ---------------------------------------------------------------------------
 # Базовый SELECT для позиций заказов (без WHERE и ORDER BY)
 # ---------------------------------------------------------------------------
 _ORDER_ITEMS_SELECT = """
-WITH wallet_operations AS (
+wallet_operations AS (
     SELECT
         o.id AS ya_orders_id,
         b.shop_sku,
@@ -232,16 +257,8 @@ JOIN e_com.unique_product_groups upg
     ON fi.unique_product_group_id = upg.id
 -- Только снимок расчёта, действовавший при создании заказа. Старым строкам
 -- без сохранённой детализации оставляем NULL, не подставляя текущие настройки.
-LEFT JOIN LATERAL (
-    SELECT history.boost_percent, history.boost_amount, to_jsonb(history)->'pricing_snapshot' AS pricing_snapshot
-    FROM e_com.yandex_price_history history
-    WHERE history.feed_item_id = i.feed_item_id
-      AND history.campaign_id = o.campaign_id
-      AND history.start_date <= o.created_at
-      AND (history.end_date IS NULL OR o.created_at < history.end_date)
-    ORDER BY history.start_date DESC, history.id DESC
-    LIMIT 1
-) price_snapshot ON TRUE
+LEFT JOIN price_snapshot
+    ON price_snapshot.order_item_id = i.id
 LEFT JOIN e_com.ya_order_margin_report mr
     ON o.id = mr.ya_orders_id
 LEFT JOIN wallet_order ON wallet_order.ya_orders_id = o.id
@@ -330,8 +347,33 @@ def build_order_items_query(
         offer_expr="i.offer_id",
     )
 
+    # Тот же фильтр заказов, но по алиасам CTE снимка (o2/i2): точечная
+    # загрузка одного заказа не должна считать снимок по всей истории.
+    snapshot_conditions, _ = _build_common_filters(
+        seller_ids=seller_ids,
+        date_from=date_from,
+        date_to=date_to,
+        seller_expr="o2.seller_id",
+        created_at_expr="o2.created_at",
+        order_id=order_id,
+        offer_id=offer_id,
+        order_expr="o2.order_id",
+        offer_expr="i2.offer_id",
+    )
+    snapshot_where = (
+        ("\n    WHERE " + "\n      AND ".join(snapshot_conditions))
+        if snapshot_conditions
+        else ""
+    )
+
     where = ("\nWHERE " + "\n  AND ".join(conditions)) if conditions else ""
-    sql = text(_ORDER_ITEMS_SELECT + where + "\nORDER BY o.created_at DESC")
+    sql = text(
+        "WITH "
+        + _PRICE_SNAPSHOT_CTE.replace("{where}", snapshot_where)
+        + _ORDER_ITEMS_SELECT
+        + where
+        + "\nORDER BY o.created_at DESC"
+    )
     return sql, params
 
 
