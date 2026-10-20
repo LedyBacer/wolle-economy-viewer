@@ -72,6 +72,8 @@ for _col, _label in _SM_COLUMN_LABELS.items():
         "sm_profit_on_purchase_pct",
     }:
         _SM_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_PCT_FMT)
+    elif _col in {"bank_confidence"}:
+        _SM_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format="%.2f")
     elif _col in {"min_price_multiplier"}:
         _SM_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format="%.4f")
     elif _col in {
@@ -116,7 +118,6 @@ for _col, _label in _SM_COLUMN_LABELS.items():
         "actual_profit",
         "margin_fact_rub",
         "bank_amount",
-        "bank_confidence",
         "total",
         "refund_total_to_seller",
     }:

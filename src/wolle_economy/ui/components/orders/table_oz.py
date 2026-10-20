@@ -77,6 +77,8 @@ for _col, _label in _OZ_COLUMN_LABELS.items():
         "margin_fact_on_cost_pct",
     }:
         _OZ_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_PCT_FMT)
+    elif _col in {"bank_confidence"}:
+        _OZ_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format="%.2f")
     elif _col in {"min_price_multiplier"}:
         _OZ_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format="%.4f")
     elif _col in {
@@ -129,7 +131,6 @@ for _col, _label in _OZ_COLUMN_LABELS.items():
         "actual_profit",
         "margin_fact_rub",
         "bank_amount",
-        "bank_confidence",
     }:
         _OZ_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_MONEY_FMT)
 

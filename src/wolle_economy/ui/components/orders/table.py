@@ -60,6 +60,8 @@ for _col, _label in COLUMN_LABELS.items():
         "planned_boost_percent",
     }:
         _COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_PCT_FMT)
+    elif _col in {"bank_confidence"}:
+        _COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format="%.2f")
     elif _col in {
         "base_price_total",
         "effective_purchase_total",
@@ -110,7 +112,6 @@ for _col, _label in COLUMN_LABELS.items():
         "actual_profit",
         "margin_fact_rub",
         "bank_amount",
-        "bank_confidence",
     }:
         _COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_MONEY_FMT)
 

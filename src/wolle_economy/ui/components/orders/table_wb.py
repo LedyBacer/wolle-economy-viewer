@@ -47,6 +47,8 @@ for _col, _label in COLUMN_LABELS.items():
         "wb_profit_on_purchase_pct",
     }:
         _WB_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_PCT_FMT)
+    elif _col in {"bank_confidence"}:
+        _WB_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format="%.2f")
     elif _col in {"currency_rate", "min_price_multiplier"}:
         _WB_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format="%.4f")
     elif _col.endswith("_cny"):
@@ -98,7 +100,6 @@ for _col, _label in COLUMN_LABELS.items():
         "actual_profit",
         "margin_fact_rub",
         "bank_amount",
-        "bank_confidence",
     }:
         _WB_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_MONEY_FMT)
 

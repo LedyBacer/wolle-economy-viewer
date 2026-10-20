@@ -33,6 +33,8 @@ for _col, _label in MM_COLUMN_LABELS.items():
         _MM_COLUMN_CONFIG[_label] = st.column_config.DatetimeColumn(format="DD.MM.YYYY")
     elif _col in {"margin_plan_pct", "margin_fact_pct", "margin_plan_on_cost_pct", "margin_fact_on_cost_pct"}:
         _MM_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_PCT_FMT)
+    elif _col in {"bank_confidence"}:
+        _MM_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format="%.2f")
     elif _col in {
         "base_price_total",
         "effective_purchase_total",
