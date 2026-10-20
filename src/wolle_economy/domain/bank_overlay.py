@@ -394,19 +394,6 @@ def _fetch_mm_wire_dates(conn) -> list:
         return []
 
 
-def _wire_nearest(order_date, wire_dates: list) -> object | None:
-    """Ближайшая проводка в [order_date; order_date + MM_WIRE_WINDOW_DAYS] или None."""
-    if order_date is None:
-        return None
-    best = None
-    for d in wire_dates:
-        wire = _as_date(d)
-        if wire is not None and order_date <= wire <= order_date + datetime.timedelta(days=MM_WIRE_WINDOW_DAYS):
-            if best is None or wire < best:
-                best = wire
-    return best
-
-
 def _apply_mm(
     df: pd.DataFrame,
     ship_to_link: dict[str, dict],
@@ -443,8 +430,10 @@ def _apply_mm(
                 df.at[idx, "bank_account_tail"] = link.get("account_tail")
     if covered:
         no_link = (df["bank_status"] == "no_data").values
-        wire_dates = list(mm_wire_dates or [])
+        # Даты проводов парсим один раз: в цикле по 20k строк _as_date per-date стоил ~90s.
+        wire_dates = [d for d in (_as_date(w) for w in (mm_wire_dates or [])) if d is not None]
         if no_link.any() and wire_dates:
+            horizon = datetime.timedelta(days=MM_WIRE_WINDOW_DAYS)
             for idx in df.index[no_link]:
                 order_date = None
                 for c in ("delivered_at", "created_at"):
@@ -452,7 +441,12 @@ def _apply_mm(
                         order_date = _as_date(df.at[idx, c])
                         if order_date is not None:
                             break
-                wire = _wire_nearest(order_date, wire_dates)
+                if order_date is None:
+                    continue
+                wire = min(
+                    (d for d in wire_dates if order_date <= d <= order_date + horizon),
+                    default=None,
+                )
                 if wire is not None:
                     df.at[idx, "bank_status"] = "likely"
                     df.at[idx, "bank_match_type"] = "window"
