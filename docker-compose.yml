@@ -4,6 +4,8 @@ x-app: &app
   restart: unless-stopped
   env_file:
     - .env
+  environment:
+    REFUND_CASES_ENABLED: "true"
 
 services:
   app:
