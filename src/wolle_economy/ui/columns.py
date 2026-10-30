@@ -482,3 +482,28 @@ ALL_COLUMNS_BY_MARKETPLACE: dict[str, list[str]] = {
     "wb": WB_ALL_COLUMNS,
     "oz": OZ_ALL_COLUMNS,
 }
+
+
+AFTER_SALES_LABELS = {
+    "after_sales_cost_estimated": "Закупочная стоимость оценочная",
+    "profit_before_after_sales": "Прибыль до возвратов и возмещений",
+    "after_sales_expense": "Расходы по обращениям за вычетом поступлений",
+    "after_sales_planned": "Будущие расходы за вычетом ожидаемых поступлений",
+    "inventory_recovery_amount": "Товар восстановлен в остатках",
+    "inventory_loss_amount": "Стоимость брака и потерь",
+    "inventory_profit_adjustment": "Корректировка закупки",
+    "after_sales_state": "Полнота экономики обращения",
+    "projected_profit": "Прогноз с договорённостями",
+}
+COLUMN_LABELS.update(AFTER_SALES_LABELS)
+for _columns in ALL_COLUMNS_BY_MARKETPLACE.values():
+    _columns.extend(k for k in AFTER_SALES_LABELS if k not in _columns)
+
+COLUMN_LABELS.update(
+    {
+        "after_sales_gross_expense": "Дополнительные расходы по обращениям",
+        "after_sales_reimbursement": "Дополнительные поступления по обращениям",
+        "after_sales_planned_gross_expense": "Плановые дополнительные расходы",
+        "after_sales_planned_reimbursement": "Ожидаемые дополнительные поступления",
+    }
+)

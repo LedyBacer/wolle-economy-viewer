@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     db_password: str
 
     # TTL кэшей Streamlit и полного снимка API (секунды)
+    refund_cases_enabled: bool = False
     cache_ttl: int = Field(default=3600)
 
 

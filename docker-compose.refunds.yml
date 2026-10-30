@@ -1,0 +1,7 @@
+services:
+  app:
+    environment:
+      REFUND_CASES_ENABLED: "true"
+  api:
+    environment:
+      REFUND_CASES_ENABLED: "true"

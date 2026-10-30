@@ -32,7 +32,9 @@ def calc_sm_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["base_price"] = _num(out["base_price"])
     out["base_price_total"] = out["base_price"] * q
 
-    out["supplier_price_fact"] = _num(out.get("supplier_price_fact", pd.Series(0.0, index=out.index)))
+    out["supplier_price_fact"] = _num(
+        out.get("supplier_price_fact", pd.Series(0.0, index=out.index))
+    )
     out["supplier_price_fact_total"] = out["supplier_price_fact"] * q
     out["effective_purchase_total"] = np.where(
         out["supplier_price_fact"] > 0,
@@ -42,34 +44,50 @@ def calc_sm_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["uses_fact_purchase_price"] = out["supplier_price_fact"] > 0
 
     out["ff_fee"] = _num(out.get("ff_fee", pd.Series(0.0, index=out.index)))
-    out["socket_adapter_fee"] = _num(out.get("socket_adapter_fee", pd.Series(0.0, index=out.index)))
+    out["socket_adapter_fee"] = _num(
+        out.get("socket_adapter_fee", pd.Series(0.0, index=out.index))
+    )
     out["ff_fee_total"] = out["ff_fee"] * q
     out["socket_adapter_total"] = out["socket_adapter_fee"] * q
     out["custom_delivery_fee_total"] = 0.0
 
     out["margin_price"] = _num(out.get("margin_price", pd.Series(0.0, index=out.index)))
-    out["margin_price_total"] = _num(out.get("margin_price_total", out["margin_price"] * q))
+    out["margin_price_total"] = _num(
+        out.get("margin_price_total", out["margin_price"] * q)
+    )
     out["price_with_margin"] = out["margin_price_total"]
     out["our_margin"] = out["margin_price_total"] - out["base_price_total"]
     out["min_sell_price_total"] = out["margin_price_total"]
 
-    raw_sell = _num(out.get("sell_price", pd.Series(np.nan, index=out.index)), default=np.nan)
+    raw_sell = _num(
+        out.get("sell_price", pd.Series(np.nan, index=out.index)), default=np.nan
+    )
     has_price_report = out.get(
         "has_price_report",
         raw_sell.notna(),
     )
-    has_price_report = pd.Series(has_price_report, index=out.index).fillna(False).astype(bool)
+    has_price_report = (
+        pd.Series(has_price_report, index=out.index).fillna(False).astype(bool)
+    )
     out["has_price_report"] = has_price_report
 
     # Фактическую цену нельзя подменять плановой margin_price: при отсутствующем
     # отчёте это создавало правдоподобное, но неверное значение.
     out["sell_price"] = raw_sell.where(has_price_report)
 
-    out["expected_payout"] = _num(out.get("expected_payout", pd.Series(0.0, index=out.index)))
-    out["payout_if_paid"] = _num(out.get("payout_if_paid", pd.Series(0.0, index=out.index)))
-    out["market_services"] = (out["sell_price"] - out["payout_if_paid"]).where(has_price_report)
+    out["expected_payout"] = _num(
+        out.get("expected_payout", pd.Series(0.0, index=out.index))
+    )
+    out["payout_if_paid"] = _num(
+        out.get("payout_if_paid", pd.Series(0.0, index=out.index))
+    )
+    out["market_services"] = (out["sell_price"] - out["payout_if_paid"]).where(
+        has_price_report
+    )
 
-    out["expected_profit"] = _num(out.get("expected_profit", pd.Series(0.0, index=out.index)))
+    out["expected_profit"] = _num(
+        out.get("expected_profit", pd.Series(0.0, index=out.index))
+    )
     report_profit = _num(
         out.get("profit", pd.Series(np.nan, index=out.index)),
         default=np.nan,
@@ -83,10 +101,20 @@ def calc_sm_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["income_after_fees_promo"] = out["income_after_fees"] + out["promo_discounts"]
 
     out["delivery_fee"] = _num(out.get("delivery_fee", pd.Series(0.0, index=out.index)))
-    out["our_costs"] = (
-        out["effective_purchase_total"] + out["ff_fee_total"] + out["socket_adapter_total"] + out["delivery_fee"]
+    out["base_purchase_expensed"] = np.where(
+        _num(out.get("refund_total_to_seller", pd.Series(0.0, index=out.index))) > 0,
+        0.0,
+        out["effective_purchase_total"],
     )
-    out["profit_no_promo"] = (out["income_after_fees"] - out["our_costs"]).where(has_price_report)
+    out["our_costs"] = (
+        out["effective_purchase_total"]
+        + out["ff_fee_total"]
+        + out["socket_adapter_total"]
+        + out["delivery_fee"]
+    )
+    out["profit_no_promo"] = (out["income_after_fees"] - out["our_costs"]).where(
+        has_price_report
+    )
 
     diff = _num(
         out.get("diff_from_min_price", pd.Series(np.nan, index=out.index)),
@@ -100,7 +128,9 @@ def calc_sm_economics(df: pd.DataFrame) -> pd.DataFrame:
         ["Переведён", "Не переведён (отчёт загружен)"],
         default="Отчёт не загружен",
     )
-    out["last_payment_date"] = pd.to_datetime(out["date_realization"], errors="coerce", utc=True)
+    out["last_payment_date"] = pd.to_datetime(
+        out["date_realization"], errors="coerce", utc=True
+    )
     out["actual_profit"] = np.where(
         is_paid,
         out["profit"],
@@ -134,7 +164,9 @@ def calc_sm_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["margin_fact_on_cost_pct"] = (out["profit"] / bp * 100).round(2)
     base_price_unit = out["base_price"].replace(0, np.nan)
     out["sm_profit_on_purchase_pct"] = (
-        _num(out.get("profit_unit", pd.Series(0.0, index=out.index))) / base_price_unit * 100
+        _num(out.get("profit_unit", pd.Series(0.0, index=out.index)))
+        / base_price_unit
+        * 100
     ).round(2)
 
     created = pd.to_datetime(out["created_at"], errors="coerce", utc=True)

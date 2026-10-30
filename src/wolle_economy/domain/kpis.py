@@ -43,6 +43,8 @@ class KPIMetrics:
     fulfill_rate: float
     loss_share: float
     items_per_o: float
+    n_incomplete_economics: int = 0
+    known_after_sales_expenses: float = 0.0
 
 
 def compute_kpis(df: pd.DataFrame) -> KPIMetrics:
@@ -59,11 +61,18 @@ def compute_kpis(df: pd.DataFrame) -> KPIMetrics:
     revenue = od["sell_price"].sum()
     payout = od["expected_payout"].sum()
     cash_payout = od.get("cash_payout", od["expected_payout"]).sum()
-    boost_wallet_spend = od.get("boost_wallet_spend", pd.Series(dtype=float)).fillna(0).sum()
+    boost_wallet_spend = (
+        od.get("boost_wallet_spend", pd.Series(dtype=float)).fillna(0).sum()
+    )
     commissions = od["market_services"].sum()
     our_costs = df["our_costs"].sum()
-    profit = df["profit"].sum()
-    profit_no_promo = df["profit_no_promo"].sum()
+    unresolved = df.get("after_sales_state", pd.Series("", index=df.index)).eq(
+        "needs_reconciliation"
+    )
+    excluded_orders = set(df.loc[unresolved, "ya_order_id"])
+    complete_rows = df.loc[~df["ya_order_id"].isin(excluded_orders)]
+    profit = complete_rows["profit"].sum()
+    profit_no_promo = complete_rows["profit_no_promo"].sum()
     promo = df["promo_discounts"].sum()
     penalties = (
         od.get("seller_cancel_penalty", pd.Series(dtype=float)).fillna(0).sum()
@@ -91,6 +100,13 @@ def compute_kpis(df: pd.DataFrame) -> KPIMetrics:
     items_per_o = n_items / n_orders if n_orders else nan
 
     return KPIMetrics(
+        n_incomplete_economics=len(excluded_orders),
+        known_after_sales_expenses=float(
+            df.get(
+                "after_sales_gross_expense",
+                df.get("after_sales_expense", pd.Series(dtype=float)),
+            ).sum()
+        ),
         revenue=revenue,
         payout=payout,
         cash_payout=cash_payout,

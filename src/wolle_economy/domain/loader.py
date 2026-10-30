@@ -47,6 +47,34 @@ from wolle_economy.domain.economics_wb import calc_wb_economics
 logger = logging.getLogger(__name__)
 
 
+def refund_aware_cache(**options):
+    from functools import wraps
+    import time
+    from sqlalchemy import text
+
+    def decorate(fn):
+        @st.cache_data(**options)
+        def cached(revision, bucket, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        @wraps(fn)
+        def wrapped(*args, **kwargs):
+            revision = 0
+            bucket = 0
+            if get_settings().refund_cases_enabled:
+                from wolle_economy.db.queries import AFTER_SALES_VERSION_SQL
+
+                with get_engine().connect() as conn:
+                    revision = conn.execute(text(AFTER_SALES_VERSION_SQL)).scalar_one()
+                bucket = int(time.time() // 60)
+            return cached(revision, bucket, *args, **kwargs)
+
+        wrapped.clear = cached.clear
+        return wrapped
+
+    return decorate
+
+
 @dataclass(frozen=True)
 class MarketplaceSpec:
     """Описание подключенного маркетплейса."""
@@ -54,7 +82,8 @@ class MarketplaceSpec:
     code: str
     title: str
     load_orders: Callable[
-        [tuple[int, ...] | None, datetime.date | None, datetime.date | None], pd.DataFrame
+        [tuple[int, ...] | None, datetime.date | None, datetime.date | None],
+        pd.DataFrame,
     ]
     load_sellers: Callable[[], pd.DataFrame]
     load_date_range: Callable[[], tuple[datetime.date, datetime.date]]
@@ -74,6 +103,7 @@ def _load_orders_for_code(
     date_to: datetime.date | None = None,
     order_id: str | None = None,
     offer_id: str | None = None,
+    include_after_sales: bool = True,
 ) -> pd.DataFrame:
     canonical_code = _normalize_marketplace_code(code)
     impl_by_code: dict[str, Callable[..., pd.DataFrame]] = {
@@ -83,13 +113,49 @@ def _load_orders_for_code(
         "wb": _load_wb_orders_impl,
         "oz": _load_oz_orders_impl,
     }
-    return impl_by_code[canonical_code](
+    managed = include_after_sales and get_settings().refund_cases_enabled
+    before_revision = None
+    if managed:
+        from sqlalchemy import text
+        from wolle_economy.db.queries import AFTER_SALES_VERSION_SQL
+
+        with get_engine().connect() as conn:
+            before_revision = conn.execute(text(AFTER_SALES_VERSION_SQL)).scalar_one()
+    result = impl_by_code[canonical_code](
         seller_ids=seller_ids,
         date_from=date_from,
         date_to=date_to,
         order_id=order_id,
         offer_id=offer_id,
     )
+    if managed:
+        from wolle_economy.db.queries import after_sales_context
+        from wolle_economy.domain.economics import apply_refund_cases
+
+        with get_engine().connect() as conn:
+            context = after_sales_context(
+                conn,
+                seller_ids[0] if seller_ids and len(seller_ids) == 1 else None,
+                order_id,
+            )
+        result = apply_refund_cases(result, *context)
+        with get_engine().connect() as conn:
+            after_revision = conn.execute(text(AFTER_SALES_VERSION_SQL)).scalar_one()
+        if after_revision != before_revision and "after_sales_state" in result.columns:
+            changed = result["after_sales_state"].notna()
+            result.loc[changed, "after_sales_state"] = "needs_reconciliation"
+            for field in (
+                "profit",
+                "actual_profit",
+                "profit_no_promo",
+                "projected_profit",
+                "margin_fact_rub",
+                "margin_pct",
+                "margin_fact_pct",
+            ):
+                if field in result.columns:
+                    result.loc[changed, field] = float("nan")
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -125,7 +191,9 @@ def _load_ym_orders_impl(
         with engine.connect() as conn:
             orders = pd.read_sql_query(orders_sql, conn, params=orders_params)
             payments = pd.read_sql_query(payments_sql, conn, params=payments_params)
-            supplier_prices = pd.read_sql_query(supplier_sql, conn, params=supplier_params)
+            supplier_prices = pd.read_sql_query(
+                supplier_sql, conn, params=supplier_params
+            )
     except SQLAlchemyError:
         logger.exception("Ошибка SQLAlchemy при загрузке данных YM из БД")
         raise
@@ -138,7 +206,11 @@ def _load_ym_orders_impl(
     )
     orders = orders.merge(supplier_prices, on="item_id", how="left")
     result = calc_economics(merge_with_payments(orders, payments))
-    return result.loc[result["offer_id"].astype(str).eq(str(offer_id))] if offer_id is not None else result
+    return (
+        result.loc[result["offer_id"].astype(str).eq(str(offer_id))]
+        if offer_id is not None
+        else result
+    )
 
 
 @st.cache_data(ttl=get_settings().cache_ttl, show_spinner=False)
@@ -160,7 +232,7 @@ def load_date_range() -> tuple[datetime.date, datetime.date]:
     return row[0], row[1]
 
 
-@st.cache_data(ttl=get_settings().cache_ttl, show_spinner="Загрузка данных…")
+@refund_aware_cache(ttl=get_settings().cache_ttl, show_spinner="Загрузка данных…")
 def load_orders(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
@@ -241,7 +313,9 @@ def load_mm_date_range() -> tuple[datetime.date, datetime.date]:
     return row[0], row[1]
 
 
-@st.cache_data(ttl=get_settings().cache_ttl, show_spinner="Загрузка данных МегаМаркет…")
+@refund_aware_cache(
+    ttl=get_settings().cache_ttl, show_spinner="Загрузка данных МегаМаркет…"
+)
 def load_mm_orders(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
@@ -309,7 +383,9 @@ def load_sm_date_range() -> tuple[datetime.date, datetime.date]:
     return row[0], row[1]
 
 
-@st.cache_data(ttl=get_settings().cache_ttl, show_spinner="Загрузка данных Sportmaster…")
+@refund_aware_cache(
+    ttl=get_settings().cache_ttl, show_spinner="Загрузка данных Sportmaster…"
+)
 def load_sm_orders(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
@@ -377,7 +453,9 @@ def load_wb_date_range() -> tuple[datetime.date, datetime.date]:
     return row[0], row[1]
 
 
-@st.cache_data(ttl=get_settings().cache_ttl, show_spinner="Загрузка данных Wildberries…")
+@refund_aware_cache(
+    ttl=get_settings().cache_ttl, show_spinner="Загрузка данных Wildberries…"
+)
 def load_wb_orders(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
@@ -445,7 +523,7 @@ def load_oz_date_range() -> tuple[datetime.date, datetime.date]:
     return row[0], row[1]
 
 
-@st.cache_data(ttl=get_settings().cache_ttl, show_spinner="Загрузка данных Ozon…")
+@refund_aware_cache(ttl=get_settings().cache_ttl, show_spinner="Загрузка данных Ozon…")
 def load_oz_orders(
     seller_ids: tuple[int, ...] | None = None,
     date_from: datetime.date | None = None,
@@ -566,7 +644,8 @@ def load_order_economics_data(
     *,
     seller_id: int,
     order_id: str,
-    offer_id: str,
+    offer_id: str | None,
+    include_after_sales: bool = True,
 ) -> pd.DataFrame:
     """Точечно загружает позицию заказа без Streamlit-кэша."""
     return _load_orders_for_code(
@@ -574,6 +653,7 @@ def load_order_economics_data(
         seller_ids=(seller_id,),
         order_id=order_id,
         offer_id=offer_id,
+        include_after_sales=include_after_sales,
     )
 
 

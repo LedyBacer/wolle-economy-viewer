@@ -29,7 +29,9 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["base_price"] = _num(out.get("base_price", pd.Series(0.0, index=out.index)))
     out["base_price_total"] = out["base_price"] * q
 
-    out["supplier_price_fact"] = _num(out.get("supplier_price_fact", pd.Series(0.0, index=out.index)))
+    out["supplier_price_fact"] = _num(
+        out.get("supplier_price_fact", pd.Series(0.0, index=out.index))
+    )
     out["supplier_price_fact_total"] = out["supplier_price_fact"] * q
     out["effective_purchase_total"] = np.where(
         out["supplier_price_fact"] > 0,
@@ -38,20 +40,30 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
     )
     out["uses_fact_purchase_price"] = out["supplier_price_fact"] > 0
 
-    out["ff_fee"] = _num(out.get("ff_fee", pd.Series(50.0, index=out.index)), default=50.0)
-    out["socket_adapter_fee"] = _num(out.get("socket_adapter_fee", pd.Series(0.0, index=out.index)))
+    out["ff_fee"] = _num(
+        out.get("ff_fee", pd.Series(50.0, index=out.index)), default=50.0
+    )
+    out["socket_adapter_fee"] = _num(
+        out.get("socket_adapter_fee", pd.Series(0.0, index=out.index))
+    )
     out["ff_fee_total"] = out["ff_fee"] * q
     out["socket_adapter_total"] = out["socket_adapter_fee"] * q
     out["custom_delivery_fee_total"] = 0.0
 
-    out["min_sell_price"] = _num(out.get("min_sell_price", pd.Series(0.0, index=out.index)))
+    out["min_sell_price"] = _num(
+        out.get("min_sell_price", pd.Series(0.0, index=out.index))
+    )
     out["min_sell_price_total"] = out["min_sell_price"] * q
-    out["min_price_multiplier"] = _num(out.get("min_price_multiplier", pd.Series(0.0, index=out.index)))
+    out["min_price_multiplier"] = _num(
+        out.get("min_price_multiplier", pd.Series(0.0, index=out.index))
+    )
     out["margin_price"] = _num(out.get("margin_price", out["min_sell_price_total"]))
     out["price_with_margin"] = out["min_sell_price_total"]
     out["our_margin"] = out["price_with_margin"] - out["base_price_total"]
 
-    out["sell_price_plan"] = _num(out.get("sell_price_plan", pd.Series(0.0, index=out.index)))
+    out["sell_price_plan"] = _num(
+        out.get("sell_price_plan", pd.Series(0.0, index=out.index))
+    )
     out["price"] = _num(out.get("price", out["sell_price_plan"]))
     for col in (
         "category_fee_fact",
@@ -77,14 +89,20 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
     oz_status = out.get("oz_status", pd.Series("", index=out.index)).fillna("")
     return_docs = _num(out.get("return_docs", pd.Series(0.0, index=out.index)))
     refund_qty = _num(out.get("refund_quantity", pd.Series(0.0, index=out.index)))
-    fulfillment = out.get("fulfillment_status", pd.Series("", index=out.index)).fillna("")
+    fulfillment = out.get("fulfillment_status", pd.Series("", index=out.index)).fillna(
+        ""
+    )
 
     is_oz_delivered = oz_status == "delivered"
     out["is_cancelled_before"] = oz_status.isin(_OZ_CANCELLED_BEFORE)
-    out["is_returned"] = (~out["is_cancelled_before"]) & is_oz_delivered & (
-        fulfillment.isin(_OZ_RETURNED_LABELS) | (return_docs > 0)
+    out["is_returned"] = (
+        (~out["is_cancelled_before"])
+        & is_oz_delivered
+        & (fulfillment.isin(_OZ_RETURNED_LABELS) | (return_docs > 0))
     )
-    out["is_delivered"] = (~out["is_cancelled_before"]) & is_oz_delivered & ~out["is_returned"]
+    out["is_delivered"] = (
+        (~out["is_cancelled_before"]) & is_oz_delivered & ~out["is_returned"]
+    )
     out["is_cancelled_any"] = out["is_cancelled_before"] | out["is_returned"]
     has_refund = is_oz_delivered & (return_docs > 0)
     is_partial_return = has_refund & (refund_qty > 0) & (refund_qty < q)
@@ -94,10 +112,16 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
     report_sell = _num(out.get("report_sell_price", pd.Series(0.0, index=out.index)))
     report_rows = _num(out.get("report_rows", pd.Series(0.0, index=out.index)))
     is_final = out["is_delivered"] | out["is_returned"] | out["is_cancelled_before"]
-    out["sell_price"] = np.where(out["is_delivered"] | out["is_returned"], report_sell, 0.0)
+    out["sell_price"] = np.where(
+        out["is_delivered"] | out["is_returned"], report_sell, 0.0
+    )
 
-    report_market_services = _num(out.get("report_market_services", pd.Series(0.0, index=out.index)))
-    out["market_services"] = np.where((report_rows > 0) & is_final, report_market_services, 0.0)
+    report_market_services = _num(
+        out.get("report_market_services", pd.Series(0.0, index=out.index))
+    )
+    out["market_services"] = np.where(
+        (report_rows > 0) & is_final, report_market_services, 0.0
+    )
     out["fact_commissions"] = out["market_services"].clip(lower=0)
 
     out["revenue_after_commission"] = _num(
@@ -111,7 +135,9 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
     has_actual_payout = (report_rows > 0) & (
         is_delivered_no_refund | is_partial_return | is_full_return
     )
-    out["expected_payout"] = np.where(has_actual_payout, out["income_after_fees"], planned_payout)
+    out["expected_payout"] = np.where(
+        has_actual_payout, out["income_after_fees"], planned_payout
+    )
 
     if "promo_discounts" not in out.columns:
         out["promo_discounts"] = 0.0
@@ -119,13 +145,22 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
     out["income_after_fees_promo"] = out["income_after_fees"] + out["promo_discounts"]
 
     delivered_qty = (q - refund_qty).clip(lower=0)
-    purchase_unit = np.where(out["supplier_price_fact"] > 0, out["supplier_price_fact"], out["base_price"])
+    purchase_unit = np.where(
+        out["supplier_price_fact"] > 0, out["supplier_price_fact"], out["base_price"]
+    )
     purchase_delivered_total = purchase_unit * delivered_qty
     socket_delivered_total = out["socket_adapter_fee"] * delivered_qty
 
+    out["base_purchase_expensed"] = np.where(
+        is_delivered_no_refund,
+        out["effective_purchase_total"],
+        np.where(is_partial_return, purchase_delivered_total, 0.0),
+    )
     out["our_costs"] = np.where(
         is_delivered_no_refund,
-        out["effective_purchase_total"] + out["ff_fee_total"] + out["socket_adapter_total"],
+        out["effective_purchase_total"]
+        + out["ff_fee_total"]
+        + out["socket_adapter_total"],
         np.where(
             is_partial_return,
             out["ff_fee_total"] + socket_delivered_total + purchase_delivered_total,
@@ -134,7 +169,9 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
                 out["ff_fee_total"],
                 np.where(
                     out["is_cancelled_before"]
-                    & out.get("cancelled_after_ship", pd.Series(False, index=out.index)).fillna(False),
+                    & out.get(
+                        "cancelled_after_ship", pd.Series(False, index=out.index)
+                    ).fillna(False),
                     out["ff_fee_total"],
                     0.0,
                 ),
@@ -142,23 +179,37 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
         ),
     )
 
-    out["seller_cancel_penalty"] = _num(out.get("cancel_penalty", pd.Series(0.0, index=out.index)))
+    out["seller_cancel_penalty"] = _num(
+        out.get("cancel_penalty", pd.Series(0.0, index=out.index))
+    )
     out["late_ship_penalty"] = _num(
         out.get("late_shipment_penalty", pd.Series(0.0, index=out.index))
     ) + _num(out.get("late_recommend_penalty", pd.Series(0.0, index=out.index)))
 
-    cancelled_after_ship = out.get("cancelled_after_ship", pd.Series(False, index=out.index)).fillna(False)
+    cancelled_after_ship = out.get(
+        "cancelled_after_ship", pd.Series(False, index=out.index)
+    ).fillna(False)
     logistics_fact = _num(out.get("logistics_fact", pd.Series(0.0, index=out.index)))
-    order_process_fact = _num(out.get("order_process_fact", pd.Series(0.0, index=out.index)))
+    order_process_fact = _num(
+        out.get("order_process_fact", pd.Series(0.0, index=out.index))
+    )
 
     delivered_no_refund_profit = (
-        out["revenue_after_commission"] - out["ff_fee_total"] - out["socket_adapter_total"] - out["effective_purchase_total"]
+        out["revenue_after_commission"]
+        - out["ff_fee_total"]
+        - out["socket_adapter_total"]
+        - out["effective_purchase_total"]
     )
     delivered_partial_return_profit = (
-        out["revenue_after_commission"] - out["ff_fee_total"] - socket_delivered_total - purchase_delivered_total
+        out["revenue_after_commission"]
+        - out["ff_fee_total"]
+        - socket_delivered_total
+        - purchase_delivered_total
     )
     delivered_full_return_profit = out["revenue_after_commission"] - out["ff_fee_total"]
-    cancelled_after_ship_profit = -logistics_fact - order_process_fact - out["ff_fee_total"]
+    cancelled_after_ship_profit = (
+        -logistics_fact - order_process_fact - out["ff_fee_total"]
+    )
 
     base_profit = np.where(
         out["is_cancelled_before"],
@@ -185,13 +236,17 @@ def calc_oz_economics(df: pd.DataFrame) -> pd.DataFrame:
         "Переведён",
         None,
     )
-    out["payout_if_paid"] = np.where(out["payment_status"] == "Переведён", out["income_after_fees"], 0.0)
+    out["payout_if_paid"] = np.where(
+        out["payment_status"] == "Переведён", out["income_after_fees"], 0.0
+    )
     out["last_payment_date"] = pd.to_datetime(
         np.where(out["payment_status"] == "Переведён", out.get("created_at"), pd.NaT),
         errors="coerce",
         utc=True,
     )
-    out["actual_profit"] = np.where(out["payment_status"] == "Переведён", out["profit"], 0.0)
+    out["actual_profit"] = np.where(
+        out["payment_status"] == "Переведён", out["profit"], 0.0
+    )
     out["profit_vs_expected"] = out["actual_profit"] - out["expected_profit"]
 
     out["is_loss"] = out["profit"] < 0

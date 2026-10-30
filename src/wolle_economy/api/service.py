@@ -52,7 +52,9 @@ def load_order_economics_data(
     import streamlit
 
     _ = streamlit
-    logging.getLogger("streamlit.runtime.caching.cache_data_api").setLevel(logging.ERROR)
+    logging.getLogger("streamlit.runtime.caching.cache_data_api").setLevel(
+        logging.ERROR
+    )
     from wolle_economy.domain.loader import load_order_economics_data as load_data
 
     return load_data(
@@ -66,10 +68,14 @@ def load_order_economics_data(
 def resolve_marketplace_code(seller_id: int) -> str:
     """Определяет код маркетплейса по записи platform_sellers."""
     with get_engine().connect() as conn:
-        seller = conn.execute(
-            PLATFORM_SELLER_SQL,
-            {"seller_id": seller_id},
-        ).mappings().one_or_none()
+        seller = (
+            conn.execute(
+                PLATFORM_SELLER_SQL,
+                {"seller_id": seller_id},
+            )
+            .mappings()
+            .one_or_none()
+        )
 
     if seller is None:
         raise SellerNotFoundError(f"Магазин seller_id={seller_id} не найден")
@@ -114,8 +120,24 @@ def _json_value(value: Any) -> Any:
 
 def serialize_order_row(row: pd.Series, marketplace_code: str) -> dict[str, Any]:
     """Возвращает только колонки режима «Показать все колонки»."""
-    columns = ALL_COLUMNS_BY_MARKETPLACE[marketplace_code]
-    return {column: _json_value(row[column]) for column in columns if column in row.index}
+    columns = list(ALL_COLUMNS_BY_MARKETPLACE[marketplace_code]) + [
+        "after_sales_cost_estimated",
+        "profit_before_after_sales",
+        "after_sales_expense",
+        "after_sales_planned",
+        "after_sales_gross_expense",
+        "after_sales_reimbursement",
+        "after_sales_planned_gross_expense",
+        "after_sales_planned_reimbursement",
+        "inventory_recovery_amount",
+        "inventory_loss_amount",
+        "inventory_profit_adjustment",
+        "after_sales_state",
+        "projected_profit",
+    ]
+    return {
+        column: _json_value(row[column]) for column in columns if column in row.index
+    }
 
 
 def get_order_economics(

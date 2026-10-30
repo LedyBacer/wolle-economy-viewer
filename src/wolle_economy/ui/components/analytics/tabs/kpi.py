@@ -10,17 +10,30 @@ def tab_kpi(df: pd.DataFrame) -> None:
     st.subheader("Ключевые показатели")
 
     m = compute_kpis(df)
-    revenue, payout, commissions, our_costs = m.revenue, m.payout, m.commissions, m.our_costs
+    revenue, payout, commissions, our_costs = (
+        m.revenue,
+        m.payout,
+        m.commissions,
+        m.our_costs,
+    )
     profit, profit_no_pr, promo = m.profit, m.profit_no_promo, m.promo
     penalties, compensations = m.penalties, m.compensations
     n_orders, n_items = m.n_orders, m.n_items
     aov, aov_net = m.aov, m.aov_net
     net_margin, take_rate, contrib = m.net_margin, m.take_rate, m.contrib
-    return_rate, cancel_rate, fulfill_rate = m.return_rate, m.cancel_rate, m.fulfill_rate
+    return_rate, cancel_rate, fulfill_rate = (
+        m.return_rate,
+        m.cancel_rate,
+        m.fulfill_rate,
+    )
     loss_share, items_per_o = m.loss_share, m.items_per_o
 
     # ---- Деньги ----
     st.markdown("**Деньги**")
+    if m.n_incomplete_economics:
+        st.warning(
+            f"В точную прибыль не включены {m.n_incomplete_economics} заказов: нужна сверка возвратов и возмещений. Известные расходы по обращениям: {fmt_money(m.known_after_sales_expenses)}"
+        )
     c = st.columns(4)
     c[0].metric("Выручка (GMV)", fmt_money(revenue))
     c[1].metric("Денежная выплата (расчёт)", fmt_money(m.cash_payout))
@@ -31,13 +44,19 @@ def tab_kpi(df: pd.DataFrame) -> None:
     c[0].metric("Комиссии МП", fmt_money(commissions))
     c[1].metric("Наши затраты", fmt_money(our_costs))
     c[2].metric("Промо-расходы", fmt_money(promo))
-    c[3].metric("Штрафы / Компенсации", f"{fmt_money(penalties)} / {fmt_money(compensations)}")
+    c[3].metric(
+        "Штрафы / Компенсации", f"{fmt_money(penalties)} / {fmt_money(compensations)}"
+    )
 
     # ---- Маржинальность и тейк ----
     st.markdown("**Маржинальность**")
     c = st.columns(4)
     c[0].metric("Net Margin", fmt_pct(net_margin), help="Прибыль / GMV")
-    c[1].metric("Contribution Margin", fmt_pct(contrib), help="(Доход до списаний баллов − затраты) / GMV")
+    c[1].metric(
+        "Contribution Margin",
+        fmt_pct(contrib),
+        help="(Доход до списаний баллов − затраты) / GMV",
+    )
     c[2].metric("Take Rate МП", fmt_pct(take_rate), help="Комиссии МП / GMV")
     c[3].metric("Доля убыточных заказов", fmt_pct(loss_share))
 
@@ -52,7 +71,9 @@ def tab_kpi(df: pd.DataFrame) -> None:
     c = st.columns(4)
     c[0].metric("Позиций на заказ", f"{items_per_o:.2f}")
     c[1].metric("Fulfillment Rate", fmt_pct(fulfill_rate), help="Доставлено / всего")
-    c[2].metric("Cancel Rate", fmt_pct(cancel_rate), help="Отменено до отгрузки / всего")
+    c[2].metric(
+        "Cancel Rate", fmt_pct(cancel_rate), help="Отменено до отгрузки / всего"
+    )
     c[3].metric("Return Rate", fmt_pct(return_rate), help="Возвраты+невыкупы / всего")
 
     st.divider()
@@ -62,11 +83,35 @@ def tab_kpi(df: pd.DataFrame) -> None:
     fig = go.Figure(
         go.Waterfall(
             orientation="v",
-            measure=["absolute", "relative", "relative", "relative", "relative", "total"],
-            x=["Выручка (GMV)", "− Комиссии МП", "− Наши затраты", "Услуги/промо баллами", "Буст баллами", "Прибыль"],
+            measure=[
+                "absolute",
+                "relative",
+                "relative",
+                "relative",
+                "relative",
+                "total",
+            ],
+            x=[
+                "Выручка (GMV)",
+                "− Комиссии МП",
+                "− Наши затраты",
+                "Услуги/промо баллами",
+                "Буст баллами",
+                "Прибыль",
+            ],
             y=[revenue, -commissions, -our_costs, promo, m.boost_wallet_spend, 0],
             textposition="outside",
-            text=[fmt_money(v) for v in [revenue, -commissions, -our_costs, promo, m.boost_wallet_spend, profit]],
+            text=[
+                fmt_money(v)
+                for v in [
+                    revenue,
+                    -commissions,
+                    -our_costs,
+                    promo,
+                    m.boost_wallet_spend,
+                    profit,
+                ]
+            ],
             connector={"line": {"color": "rgb(120,120,120)"}},
         )
     )

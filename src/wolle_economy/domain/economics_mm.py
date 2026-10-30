@@ -32,7 +32,9 @@ from wolle_economy.enums import (
 # Русские строки fulfillment_status для группировки
 _DELIVERED_LABELS = frozenset({MM_FULFILLMENT_STATUS_DELIVERED})
 _CANCELLED_LABELS = frozenset({MM_FULFILLMENT_STATUS_CANCELLED})
-_RETURNED_LABELS = frozenset({MM_FULFILLMENT_STATUS_NOT_DELIVERED, MM_FULFILLMENT_STATUS_RETURNED})
+_RETURNED_LABELS = frozenset(
+    {MM_FULFILLMENT_STATUS_NOT_DELIVERED, MM_FULFILLMENT_STATUS_RETURNED}
+)
 
 
 # ── НДС на incentive (бонусы → рубли) ────────────────────────────────────────
@@ -48,7 +50,7 @@ def _compute_vat_rate(created_at: pd.Series) -> pd.Series:
     dt = pd.to_datetime(created_at, errors="coerce", utc=True)
     rate = pd.Series(0.0, index=created_at.index)
     rate = rate.where(dt >= _VAT_BOUNDARY_2026_04, 0.22)  # до 01.04.2026 → 22%
-    rate = rate.where(dt >= _VAT_BOUNDARY_2026_01, 0.20)   # до 01.01.2026 → 20%
+    rate = rate.where(dt >= _VAT_BOUNDARY_2026_01, 0.20)  # до 01.01.2026 → 20%
     return rate
 
 
@@ -140,6 +142,12 @@ def calc_mm_economics(df: pd.DataFrame) -> pd.DataFrame:
     if "bonus_from_mm" not in df.columns:
         df["bonus_from_mm"] = 0.0
     df["bonus_from_mm"] = df["bonus_from_mm"].fillna(0)
+
+    df["base_purchase_expensed"] = np.where(
+        df["is_cancelled_before"] | df["is_returned"],
+        0.0,
+        df["effective_purchase_total"],
+    )
 
     # ── Наши затраты ───────────────────────────────────────────────────────
     return_cost = pd.to_numeric(

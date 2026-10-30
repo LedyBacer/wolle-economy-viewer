@@ -595,7 +595,12 @@ def build_payment_aggregates_query(
     params: dict[str, Any] = {}
     extra_conditions: list[str] = []
 
-    if seller_ids or date_from is not None or date_to is not None or order_id is not None:
+    if (
+        seller_ids
+        or date_from is not None
+        or date_to is not None
+        or order_id is not None
+    ):
         sub_conditions = ["o2.id = p.ya_orders_id"]
 
         if seller_ids:
@@ -615,12 +620,16 @@ def build_payment_aggregates_query(
             params["order_id"] = order_id
 
         sub_where = " AND ".join(sub_conditions)
-        extra_conditions.append(f"EXISTS (SELECT 1 FROM e_com.ya_orders o2 WHERE {sub_where})")
+        extra_conditions.append(
+            f"EXISTS (SELECT 1 FROM e_com.ya_orders o2 WHERE {sub_where})"
+        )
 
     ranked_filters = ""
     if extra_conditions:
         ranked_filters = "  AND " + "\n  AND ".join(extra_conditions)
-    base = _PAYMENT_AGGREGATES_SELECT.replace("    /* PAYMENT_FILTERS */", ranked_filters)
+    base = _PAYMENT_AGGREGATES_SELECT.replace(
+        "    /* PAYMENT_FILTERS */", ranked_filters
+    )
 
     base += "GROUP BY p.ya_orders_id"
     sql = text(base)
@@ -1883,3 +1892,60 @@ SELECT
     MAX(created_at)::date AS max_date
 FROM e_com.sm_orders
 """)
+
+# WOL-1511: one read model consumed by API and all marketplace loaders.
+AFTER_SALES_ITEMS_SQL = """
+SELECT i.*,EXISTS(SELECT 1 FROM e_com.refund_replacements r WHERE r.item_id=i.id AND r.state IN ('reserved','shipped','delivered','lost') AND r.cost IS NULL) AS replacement_cost_unknown, c.seller_id,c.order_number,c.state AS case_state,c.id AS refund_case_id,
+       o.offer_id,o.price,o.quantity,cost.amount AS procurement_cost,cost.procurement_id,
+       (num_nonnulls(ar.yandex_refund_id,ar.wb_refund_id,ar.ozon_refund_id,ar.mm_refund_id,ar.sm_refund_id)>0) AS native_refund
+FROM e_com.refund_case_items i JOIN e_com.refund_cases c ON c.id=i.case_id
+JOIN e_com.all_split_orders o ON o.id=i.split_order_id
+LEFT JOIN e_com.all_refunds ar ON ar.id=i.refund_id
+LEFT JOIN e_com.v_refund_unit_costs cost ON cost.split_order_id=o.id
+WHERE (c.economics_managed OR c.id=CAST(:include_case AS uuid)) AND c.state IN ('open','resolved')
+AND (:seller_id IS NULL OR c.seller_id=:seller_id)
+AND (:order_number IS NULL OR c.order_number=:order_number)
+ORDER BY c.created_at,i.id
+"""
+AFTER_SALES_OPERATIONS_SQL = """
+SELECT f.*, a.split_order_id,a.amount AS allocated_amount,c.seller_id,c.order_number,o.offer_id
+FROM e_com.refund_financial_operations f JOIN e_com.refund_cases c ON c.id=f.case_id
+JOIN e_com.refund_financial_allocations a ON a.operation_id=f.id
+JOIN e_com.all_split_orders o ON o.id=a.split_order_id
+WHERE (c.economics_managed OR c.id=CAST(:include_case AS uuid)) AND c.state IN ('open','resolved') AND f.kind<>'reversal' AND f.state IN ('planned','posted')
+AND (:seller_id IS NULL OR c.seller_id=:seller_id)
+AND (:order_number IS NULL OR c.order_number=:order_number)
+"""
+AFTER_SALES_MATCHES_SQL = """
+SELECT m.*,s.coverage AS current_coverage,s.fingerprint AS current_fingerprint,s.amount AS current_amount
+FROM e_com.refund_financial_matches m JOIN e_com.refund_financial_operations f ON f.id=m.operation_id
+JOIN e_com.refund_cases c ON c.id=f.case_id
+LEFT JOIN e_com.v_refund_report_candidates s ON s.source_type=m.source_type AND s.source_key=m.source_key
+AND s.seller_id=c.seller_id AND s.order_number=c.order_number
+WHERE m.reversed_at IS NULL AND (c.economics_managed OR c.id=CAST(:include_case AS uuid))
+AND (:seller_id IS NULL OR c.seller_id=:seller_id)
+AND (:order_number IS NULL OR c.order_number=:order_number)
+"""
+AFTER_SALES_VERSION_SQL = (
+    "SELECT coalesce(sum(revision),0) FROM e_com.refund_economics_versions"
+)
+AFTER_SALES_ORDER_SQL = "SELECT revision FROM e_com.refund_economics_versions WHERE seller_id=:seller_id AND order_number=:order_number"
+AFTER_SALES_CASE_SQL = "SELECT c.seller_id,c.order_number,c.version,coalesce(v.revision,0) AS revision FROM e_com.refund_cases c LEFT JOIN e_com.refund_economics_versions v ON v.seller_id=c.seller_id AND v.order_number=c.order_number WHERE c.id=CAST(:case_id AS uuid)"
+
+
+def after_sales_context(conn, seller_id=None, order_number=None, include_case=None):
+    from sqlalchemy import text
+
+    params = {
+        "seller_id": seller_id,
+        "order_number": order_number,
+        "include_case": include_case,
+    }
+    return tuple(
+        [dict(r) for r in conn.execute(text(sql), params).mappings()]
+        for sql in (
+            AFTER_SALES_ITEMS_SQL,
+            AFTER_SALES_OPERATIONS_SQL,
+            AFTER_SALES_MATCHES_SQL,
+        )
+    )

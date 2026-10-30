@@ -30,7 +30,9 @@ from wolle_economy.enums import (
 )
 
 
-def merge_with_payments(orders_df: pd.DataFrame, payments_df: pd.DataFrame) -> pd.DataFrame:
+def merge_with_payments(
+    orders_df: pd.DataFrame, payments_df: pd.DataFrame
+) -> pd.DataFrame:
     """Объединяет данные о заказах с агрегированными данными о платежах."""
     return orders_df.merge(
         payments_df.rename(columns={"ya_orders_id": "ya_order_id"}),
@@ -53,28 +55,58 @@ def _allocate_order_amounts(df: pd.DataFrame) -> pd.DataFrame:
         if len(indices) < 2:
             continue
         group = df.loc[indices]
-        weights = ((group["buyer_price"].fillna(0) + group["subsidy"].fillna(0))
-                   * group["quantity"].fillna(1)).astype(float).clip(lower=0)
-        shares = weights / weights.sum() if weights.sum() > 0 else pd.Series(1 / len(group),index=indices)
-        shared_columns = ["sell_price", "market_services", "promo_discounts", "boost_wallet_spend", "fact_commissions"]
-        shared_columns += [name for name in df if name.startswith("fact_") and name.endswith("_fee")]
+        weights = (
+            (
+                (group["buyer_price"].fillna(0) + group["subsidy"].fillna(0))
+                * group["quantity"].fillna(1)
+            )
+            .astype(float)
+            .clip(lower=0)
+        )
+        shares = (
+            weights / weights.sum()
+            if weights.sum() > 0
+            else pd.Series(1 / len(group), index=indices)
+        )
+        shared_columns = [
+            "sell_price",
+            "market_services",
+            "promo_discounts",
+            "boost_wallet_spend",
+            "fact_commissions",
+        ]
+        shared_columns += [
+            name for name in df if name.startswith("fact_") and name.endswith("_fee")
+        ]
         shared_columns += ["fact_other_fees", "fact_unclassified_fees"]
         for column in dict.fromkeys(shared_columns):
             if column not in df:
                 continue
-            values = pd.to_numeric(group[column],errors="coerce").astype(float).dropna()
+            values = (
+                pd.to_numeric(group[column], errors="coerce").astype(float).dropna()
+            )
             if values.empty:
                 continue
             # Общий отчёт/платёжный агрегат одинаков в JOIN каждой позиции.
-            df[column] = pd.to_numeric(df[column],errors="coerce").astype(float)
-            df.loc[indices,column] = shares * values.iloc[0]
+            df[column] = pd.to_numeric(df[column], errors="coerce").astype(float)
+            df.loc[indices, column] = shares * values.iloc[0]
         if "report_service_details" in df:
-            details = next((value for value in group["report_service_details"] if isinstance(value,dict)),None)
+            details = next(
+                (
+                    value
+                    for value in group["report_service_details"]
+                    if isinstance(value, dict)
+                ),
+                None,
+            )
             if details is not None:
                 for index in indices:
-                    df.at[index,"report_service_details"] = {key:float(value or 0)*shares.loc[index] for key,value in details.items()}
-        df.loc[indices,"order_costs_allocated"] = True
-        df.loc[indices,"order_cost_share"] = shares
+                    df.at[index, "report_service_details"] = {
+                        key: float(value or 0) * shares.loc[index]
+                        for key, value in details.items()
+                    }
+        df.loc[indices, "order_costs_allocated"] = True
+        df.loc[indices, "order_cost_share"] = shares
     return df
 
 
@@ -82,56 +114,127 @@ def aggregate_yandex_orders(df: pd.DataFrame) -> pd.DataFrame:
     """Итоги заказа: суммы позиций, затем пересчёт процентов от общей базы."""
     if df.empty:
         return df.copy()
-    result = df.drop_duplicates("ya_order_id").copy().set_index("ya_order_id",drop=False)
-    totals = {"quantity","sell_price","market_services","promo_discounts","boost_wallet_spend",
-              "bonus_points","our_margin","price_with_margin","our_costs","expected_profit","legacy_floor_profit",
-              "expected_payout","profit","profit_no_promo","actual_profit","payout_if_paid",
-              "profit_vs_expected","income_after_fees","income_after_fees_promo","diff_from_min_price",
-              "fact_commissions","calc_commissions","commissions_diff","full_market_services",
-              "cash_payout","wallet_balance_change"}
-    totals.update(column for column in df if column.endswith(("_total","_diff")))
-    totals.update(column for column in df if column.startswith("fact_") and column.endswith(("_fee","_fees","_spend")))
+    result = (
+        df.drop_duplicates("ya_order_id").copy().set_index("ya_order_id", drop=False)
+    )
+    totals = {
+        "quantity",
+        "sell_price",
+        "market_services",
+        "promo_discounts",
+        "boost_wallet_spend",
+        "bonus_points",
+        "our_margin",
+        "price_with_margin",
+        "our_costs",
+        "expected_profit",
+        "legacy_floor_profit",
+        "expected_payout",
+        "profit",
+        "profit_no_promo",
+        "actual_profit",
+        "payout_if_paid",
+        "profit_vs_expected",
+        "income_after_fees",
+        "income_after_fees_promo",
+        "diff_from_min_price",
+        "fact_commissions",
+        "calc_commissions",
+        "commissions_diff",
+        "full_market_services",
+        "cash_payout",
+        "wallet_balance_change",
+    }
+    totals.update(column for column in df if column.endswith(("_total", "_diff")))
+    totals.update(
+        column
+        for column in df
+        if column.startswith("fact_") and column.endswith(("_fee", "_fees", "_spend"))
+    )
     for column in totals.intersection(df.columns):
-        result[column] = df.groupby("ya_order_id",sort=False)[column].sum(min_count=1)
-    for flag in ("order_costs_allocated","economics_is_estimated","is_returned","is_cancelled_any"):
+        result[column] = df.groupby("ya_order_id", sort=False)[column].sum(min_count=1)
+    for flag in (
+        "order_costs_allocated",
+        "economics_is_estimated",
+        "is_returned",
+        "is_cancelled_any",
+    ):
         if flag in df:
-            result[flag] = df.groupby("ya_order_id",sort=False)[flag].any()
-    result["margin_pct"] = (result["profit"] / result["sell_price"].replace(0,np.nan)*100).round(2)
+            result[flag] = df.groupby("ya_order_id", sort=False)[flag].any()
+    result["margin_pct"] = (
+        result["profit"] / result["sell_price"].replace(0, np.nan) * 100
+    ).round(2)
     result["margin_fact_pct"] = result["margin_pct"]
     result["margin_fact_rub"] = result["profit"]
-    result["margin_plan_pct"] = (result["our_margin"] / result["sell_price"].replace(0,np.nan)*100).round(2)
-    result["margin_plan_on_cost_pct"] = (result["our_margin"] / result["base_price_total"].replace(0,np.nan)*100).round(2)
-    result["margin_fact_on_cost_pct"] = (result["profit"] / result["effective_purchase_total"].replace(0,np.nan)*100).round(2)
-    result["take_rate_pct"] = (result["market_services"] / result["sell_price"].replace(0,np.nan)*100).round(2)
+    result["margin_plan_pct"] = (
+        result["our_margin"] / result["sell_price"].replace(0, np.nan) * 100
+    ).round(2)
+    result["margin_plan_on_cost_pct"] = (
+        result["our_margin"] / result["base_price_total"].replace(0, np.nan) * 100
+    ).round(2)
+    result["margin_fact_on_cost_pct"] = (
+        result["profit"] / result["effective_purchase_total"].replace(0, np.nan) * 100
+    ).round(2)
+    result["take_rate_pct"] = (
+        result["market_services"] / result["sell_price"].replace(0, np.nan) * 100
+    ).round(2)
     result["is_loss"] = result["profit"] < 0
     return result.reset_index(drop=True)
 
 
 def _apply_pricing_snapshot(df: pd.DataFrame) -> pd.DataFrame:
     """Полный план публикации имеет приоритет над повторным расчётом уведомления."""
-    snapshots = df.get("pricing_snapshot", pd.Series(None, index=df.index, dtype=object))
+    snapshots = df.get(
+        "pricing_snapshot", pd.Series(None, index=df.index, dtype=object)
+    )
+
     def is_complete(value):
-        if not isinstance(value, dict) or value.get("calculation_version") != "yandex-v2-full-fees" or value.get("snapshot_source") == "order_recalculation":
+        if (
+            not isinstance(value, dict)
+            or value.get("calculation_version") != "yandex-v2-full-fees"
+            or value.get("snapshot_source") == "order_recalculation"
+        ):
             return False
         try:
-            for number in (value["source"]["purchase_price_rub"], value["margin"]["markup_percent"],
-                           value["prices"]["target_price"], value["prices"]["minimum_allowed_price"]):
+            for number in (
+                value["source"]["purchase_price_rub"],
+                value["margin"]["markup_percent"],
+                value["prices"]["target_price"],
+                value["prices"]["minimum_allowed_price"],
+            ):
                 if not np.isfinite(float(number)):
                     return False
             return isinstance(value["components"], list) and all(
-                isinstance(component, dict) and isinstance(component["code"], str)
-                and np.isfinite(float(component["amount"])) for component in value["components"])
+                isinstance(component, dict)
+                and isinstance(component["code"], str)
+                and np.isfinite(float(component["amount"]))
+                for component in value["components"]
+            )
         except (KeyError, TypeError, ValueError, OverflowError):
             return False
+
     complete = snapshots.map(is_complete)
     df["plan_snapshot_complete"] = complete
     df["snapshot_expected_profit_unit"] = np.nan
     df["snapshot_shipping_fixed"] = 0.0
     if complete.any():
-        for field in ("base_price", "margin_percent", "min_sell_price", "ff_fee", "socket_adapter_fee",
-                      "custom_delivery_fee", "calc_category_fee", "calc_transfer_fee",
-                      "calc_accepting_payment_fee", "calc_order_processing_fee", "planned_boost_amount", "calc_delivery_fee"):
-            df[field] = pd.to_numeric(df.get(field, pd.Series(np.nan, index=df.index)), errors="coerce").astype(float)
+        for field in (
+            "base_price",
+            "margin_percent",
+            "min_sell_price",
+            "ff_fee",
+            "socket_adapter_fee",
+            "custom_delivery_fee",
+            "calc_category_fee",
+            "calc_transfer_fee",
+            "calc_accepting_payment_fee",
+            "calc_order_processing_fee",
+            "planned_boost_amount",
+            "calc_delivery_fee",
+        ):
+            df[field] = pd.to_numeric(
+                df.get(field, pd.Series(np.nan, index=df.index)), errors="coerce"
+            ).astype(float)
     for index in df.index[complete]:
         snapshot = snapshots.loc[index]
         components = {c["code"]: float(c["amount"]) for c in snapshot["components"]}
@@ -139,18 +242,35 @@ def _apply_pricing_snapshot(df: pd.DataFrame) -> pd.DataFrame:
         price = float(snapshot["prices"]["target_price"])
         df.loc[index, "base_price"] = purchase
         df.loc[index, "margin_percent"] = float(snapshot["margin"]["markup_percent"])
-        df.loc[index, "min_sell_price"] = float(snapshot["prices"]["minimum_allowed_price"])
+        df.loc[index, "min_sell_price"] = float(
+            snapshot["prices"]["minimum_allowed_price"]
+        )
         fields = {
-            "ff_fee": "ff", "socket_adapter_fee": "socket_adapter",
-            "custom_delivery_fee": "custom_delivery", "calc_category_fee": "category_commission",
-            "calc_transfer_fee": "transfer_commission", "calc_accepting_payment_fee": "accepting_payment",
-            "calc_order_processing_fee": "order_processing", "planned_boost_amount": "boost",
+            "ff_fee": "ff",
+            "socket_adapter_fee": "socket_adapter",
+            "custom_delivery_fee": "custom_delivery",
+            "calc_category_fee": "category_commission",
+            "calc_transfer_fee": "transfer_commission",
+            "calc_accepting_payment_fee": "accepting_payment",
+            "calc_order_processing_fee": "order_processing",
+            "planned_boost_amount": "boost",
         }
         for field, code in fields.items():
             df.loc[index, field] = components.get(code, 0)
-        df.loc[index, "calc_delivery_fee"] = sum(components.get(code, 0) for code in ("delivery", "middle_mile", "cross_border"))
-        df.loc[index, "snapshot_expected_profit_unit"] = price - purchase - sum(amount for code, amount in components.items() if code != "margin")
-        df.loc[index, "snapshot_shipping_fixed"] = float(snapshot.get("decision",{}).get("metadata",{}).get("cross_border_fixed_per_order",0))
+        df.loc[index, "calc_delivery_fee"] = sum(
+            components.get(code, 0)
+            for code in ("delivery", "middle_mile", "cross_border")
+        )
+        df.loc[index, "snapshot_expected_profit_unit"] = (
+            price
+            - purchase
+            - sum(amount for code, amount in components.items() if code != "margin")
+        )
+        df.loc[index, "snapshot_shipping_fixed"] = float(
+            snapshot.get("decision", {})
+            .get("metadata", {})
+            .get("cross_border_fixed_per_order", 0)
+        )
     return df
 
 
@@ -237,14 +357,16 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
     # а субсидия возврата списывается отдельно через "Возврат баллов за скидку Маркета".
     # Для обычных заказов returned_sell_price = 0, поэтому изменений нет.
     returned_sell = (
-        df["returned_sell_price"].fillna(0) if "returned_sell_price" in df.columns else 0.0
+        df["returned_sell_price"].fillna(0)
+        if "returned_sell_price" in df.columns
+        else 0.0
     )
     df["sell_price"] = df["sell_price"] - returned_sell
 
     # Ожидаемая выплата = цена продажи минус комиссии ЯМ
-    df["expected_payout"] = (df["sell_price"].fillna(0) - df["market_services"].fillna(0)).clip(
-        lower=0
-    )
+    df["expected_payout"] = (
+        df["sell_price"].fillna(0) - df["market_services"].fillna(0)
+    ).clip(lower=0)
 
     # Полный план комиссий из снимка позиции заказа. Все исходные суммы
     # рассчитаны за единицу товара, поэтому для строки показываем итог × quantity.
@@ -261,17 +383,31 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
     df["calc_accepting_payment_fee_total"] = planned_total("calc_accepting_payment_fee")
     df["calc_order_processing_fee_total"] = planned_total("calc_order_processing_fee")
     df["snapshot_fixed_fee_savings"] = 0.0
-    complete = df.get("plan_snapshot_complete",pd.Series(False,index=df.index)).fillna(False)
+    complete = df.get(
+        "plan_snapshot_complete", pd.Series(False, index=df.index)
+    ).fillna(False)
     if complete.any():
-        sku_count = (df.groupby(["ya_order_id","offer_id"])["offer_id"].transform("size")
-                     if "ya_order_id" in df and "offer_id" in df else pd.Series(1,index=df.index))
-        accepting = pd.to_numeric(df["calc_accepting_payment_fee"],errors="coerce").fillna(0) / sku_count
+        sku_count = (
+            df.groupby(["ya_order_id", "offer_id"])["offer_id"].transform("size")
+            if "ya_order_id" in df and "offer_id" in df
+            else pd.Series(1, index=df.index)
+        )
+        accepting = (
+            pd.to_numeric(df["calc_accepting_payment_fee"], errors="coerce").fillna(0)
+            / sku_count
+        )
         accepting_savings = df["calc_accepting_payment_fee_total"] - accepting
-        df["calc_accepting_payment_fee_total"] = df["calc_accepting_payment_fee_total"].where(~complete,accepting)
-        fixed = df.get("snapshot_shipping_fixed",pd.Series(0,index=df.index))
-        shipping_savings = fixed * (q-df.get("order_cost_share",pd.Series(1,index=df.index)))
-        df["calc_delivery_fee_total"] -= shipping_savings.where(complete,0)
-        df["snapshot_fixed_fee_savings"] = (accepting_savings+shipping_savings).where(complete,0)
+        df["calc_accepting_payment_fee_total"] = df[
+            "calc_accepting_payment_fee_total"
+        ].where(~complete, accepting)
+        fixed = df.get("snapshot_shipping_fixed", pd.Series(0, index=df.index))
+        shipping_savings = fixed * (
+            q - df.get("order_cost_share", pd.Series(1, index=df.index))
+        )
+        df["calc_delivery_fee_total"] -= shipping_savings.where(complete, 0)
+        df["snapshot_fixed_fee_savings"] = (accepting_savings + shipping_savings).where(
+            complete, 0
+        )
     planned_columns = [
         "calc_category_fee_total",
         "calc_transfer_fee_total",
@@ -290,9 +426,11 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
     df["promo_discounts"] = df["promo_discounts"].fillna(0)
     # Отдельный отчёт по баллам надёжнее старых строк платёжного отчёта.
     # Замена, а не сложение, предотвращает двойной учёт уже распознанных списаний.
-    wallet_available = df.get(
-        "wallet_promo_available", pd.Series(False, index=df.index)
-    ).fillna(False).astype(bool)
+    wallet_available = (
+        df.get("wallet_promo_available", pd.Series(False, index=df.index))
+        .fillna(False)
+        .astype(bool)
+    )
     wallet_promo = pd.to_numeric(
         df.get("wallet_promo_discounts", pd.Series(0.0, index=df.index)),
         errors="coerce",
@@ -315,7 +453,9 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
         df.get("market_services", pd.Series(np.nan, index=df.index)),
         errors="coerce",
     )
-    report_available = report_details.map(lambda value: isinstance(value, dict)) & report_total.notna()
+    report_available = (
+        report_details.map(lambda value: isinstance(value, dict)) & report_total.notna()
+    )
 
     def report_component(key: str) -> pd.Series:
         return pd.to_numeric(
@@ -348,8 +488,12 @@ def _compute_payouts(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
             "sales_reward",
         )
     }
-    report_components_total = sum(report_components.values(), pd.Series(0.0, index=df.index))
-    report_complete = report_available & report_components_total.sub(report_total).abs().le(0.011)
+    report_components_total = sum(
+        report_components.values(), pd.Series(0.0, index=df.index)
+    )
+    report_complete = report_available & report_components_total.sub(
+        report_total
+    ).abs().le(0.011)
     fact_commissions_raw = fact_commissions_raw.where(~report_available, report_total)
 
     if "fact_commissions_available" in df.columns:
@@ -486,18 +630,35 @@ def _compute_profits(df: pd.DataFrame, our_costs: pd.Series) -> pd.DataFrame:
     boost_wallet_spend = pd.to_numeric(
         df.get("boost_wallet_spend", pd.Series(0.0, index=df.index)),
         errors="coerce",
-    ).fillna(0)  # debit is negative
+    ).fillna(
+        0
+    )  # debit is negative
     # Целевая прибыль задаётся на закупку при публикации цены. Фактические
     # удержания и списания баллов не должны менять исторический план.
     df["expected_profit"] = df["our_margin"]
-    snapshot_profit = pd.to_numeric(df.get("snapshot_expected_profit_unit", pd.Series(np.nan, index=df.index)), errors="coerce")
-    df["expected_profit"] = df["expected_profit"].where(snapshot_profit.isna(), snapshot_profit * df["quantity"].fillna(1)+df.get("snapshot_fixed_fee_savings",0))
-    df["legacy_floor_profit"] = (
-        df["min_sell_price_total"] - df["calc_commissions"] - planned_boost
-        - df["base_price_total"] - df["ff_fee_total"]
-        - df["socket_adapter_total"] - df["custom_delivery_fee_total"]
+    snapshot_profit = pd.to_numeric(
+        df.get("snapshot_expected_profit_unit", pd.Series(np.nan, index=df.index)),
+        errors="coerce",
     )
-    complete = df.get("plan_snapshot_complete", pd.Series(False, index=df.index)).fillna(False).astype(bool)
+    df["expected_profit"] = df["expected_profit"].where(
+        snapshot_profit.isna(),
+        snapshot_profit * df["quantity"].fillna(1)
+        + df.get("snapshot_fixed_fee_savings", 0),
+    )
+    df["legacy_floor_profit"] = (
+        df["min_sell_price_total"]
+        - df["calc_commissions"]
+        - planned_boost
+        - df["base_price_total"]
+        - df["ff_fee_total"]
+        - df["socket_adapter_total"]
+        - df["custom_delivery_fee_total"]
+    )
+    complete = (
+        df.get("plan_snapshot_complete", pd.Series(False, index=df.index))
+        .fillna(False)
+        .astype(bool)
+    )
     df["legacy_floor_profit"] = df["legacy_floor_profit"].where(~complete)
 
     promo = df["promo_discounts"].fillna(0)  # отрицательная сумма
@@ -506,10 +667,16 @@ def _compute_profits(df: pd.DataFrame, our_costs: pd.Series) -> pd.DataFrame:
 
     df["profit"] = df["income_after_fees_promo"] - our_costs
     df["profit_no_promo"] = df["income_after_fees"] + boost_wallet_spend - our_costs
-    df["full_market_services"] = df["market_services"].fillna(0) - promo - boost_wallet_spend
+    df["full_market_services"] = (
+        df["market_services"].fillna(0) - promo - boost_wallet_spend
+    )
     # Денежная выплата и доход с учётом бонусного баланса — разные величины.
     # Это реконструкция из отчёта, а не подтверждённая банковская выписка.
-    df["cash_payout"] = df["sell_price"].fillna(0) - df["bonus_points"] - df["market_services"].fillna(0)
+    df["cash_payout"] = (
+        df["sell_price"].fillna(0)
+        - df["bonus_points"]
+        - df["market_services"].fillna(0)
+    )
     df["wallet_balance_change"] = df["bonus_points"] + promo + boost_wallet_spend
     df["economics_is_estimated"] = ~df["uses_fact_purchase_price"]
 
@@ -548,9 +715,11 @@ def _compute_actual_profit(df: pd.DataFrame, our_costs: pd.Series) -> pd.DataFra
 
     # Для факта приоритетны реальные удержания из платёжного отчёта.
     # market_services остаётся fallback для заказов без такого отчёта.
-    fact_available = df.get(
-        "fact_commissions_available", pd.Series(False, index=df.index)
-    ).fillna(False).astype(bool)
+    fact_available = (
+        df.get("fact_commissions_available", pd.Series(False, index=df.index))
+        .fillna(False)
+        .astype(bool)
+    )
     fact_commissions = pd.to_numeric(
         df.get("fact_commissions", pd.Series(0.0, index=df.index)), errors="coerce"
     ).fillna(0)
@@ -567,7 +736,9 @@ def _compute_actual_profit(df: pd.DataFrame, our_costs: pd.Series) -> pd.DataFra
     boost_wallet_spend = pd.to_numeric(
         df.get("boost_wallet_spend", pd.Series(0.0, index=df.index)),
         errors="coerce",
-    ).fillna(0)  # debit is negative
+    ).fillna(
+        0
+    )  # debit is negative
     compensations = pd.to_numeric(
         df.get("compensations", pd.Series(0.0, index=df.index)), errors="coerce"
     ).fillna(0)
@@ -651,7 +822,9 @@ def calc_economics(df: pd.DataFrame) -> pd.DataFrame:
     # покупная цена возвращённых штук не потеряна — товар вернулся на склад.
     # Если транзакций нет (tr_delivered_quantity IS NULL) — fallback на полный quantity.
     if "tr_delivered_quantity" in df.columns:
-        delivered_q = pd.to_numeric(df["tr_delivered_quantity"], errors="coerce").fillna(q)
+        delivered_q = pd.to_numeric(
+            df["tr_delivered_quantity"], errors="coerce"
+        ).fillna(q)
     else:
         delivered_q = q
 
@@ -676,6 +849,7 @@ def calc_economics(df: pd.DataFrame) -> pd.DataFrame:
         + df["socket_adapter_fee"] * delivered_q
         + cdn * delivered_q
     )
+    df["base_purchase_expensed"] = effective_purchase_delivered
     df["our_costs"] = our_costs
 
     df = _compute_profits(df, our_costs)
@@ -683,3 +857,308 @@ def calc_economics(df: pd.DataFrame) -> pd.DataFrame:
     df = _compute_flags_and_lags(df)
 
     return df
+
+
+def apply_refund_cases(frame, items, operations, matches):
+    """Послеобслуживание: деньги и восстановление закупки, без изменения плана продажи."""
+    from decimal import Decimal, ROUND_DOWN
+
+    out = frame.copy()
+    if out.empty:
+        return out
+
+    def dec(value):
+        if value is None or pd.isna(value):
+            return None
+        return Decimal(str(value))
+
+    def split_amount(total, allocation_rows):
+        weights = {
+            str(x["split_order_id"]): Decimal(str(x["allocated_amount"]))
+            for x in allocation_rows
+        }
+        weight = sum(weights.values())
+        if weight <= 0:
+            return {k: Decimal(0) for k in weights}
+        result = {
+            k: (total * v / weight).quantize(Decimal(".01"), rounding=ROUND_DOWN)
+            for k, v in weights.items()
+        }
+        for k in sorted(weights, key=int)[: int((total - sum(result.values())) * 100)]:
+            result[k] += Decimal(".01")
+        return result
+
+    by_operation = {}
+    for op in operations:
+        by_operation.setdefault(str(op["id"]), []).append(op)
+    expenses = {}
+    reimbursements = {}
+    planned_reimbursements = {}
+    plans = {}
+    unknown = set()
+    case_ids = {}
+    for op_id, allocations in by_operation.items():
+        op = allocations[0]
+        key = lambda x: (
+            int(x["seller_id"]),
+            str(x["order_number"]),
+            str(x["offer_id"]),
+        )
+        if op["payer"] != "company":
+            continue
+        if op["currency"] != "RUB" and op.get("rub_amount") is None:
+            unknown.update(key(a) for a in allocations)
+            continue
+        incoming = op.get("kind") in (
+            "supplier_reimbursement",
+            "carrier_reimbursement",
+            "commission_refund",
+        )
+        sign = Decimal(-1) if incoming else Decimal(1)
+        total = Decimal(str(op["rub_amount"] or op["amount"]))
+        if op["state"] == "planned":
+            for a in allocations:
+                if incoming:
+                    planned_reimbursements[key(a)] = planned_reimbursements.get(
+                        key(a), Decimal(0)
+                    ) + Decimal(str(a["allocated_amount"]))
+                plans[key(a)] = plans.get(key(a), Decimal(0)) + sign * Decimal(
+                    str(a["allocated_amount"])
+                )
+            continue
+        covered = Decimal(0)
+        valid_matched = Decimal(0)
+        uncertain = False
+        for match in matches:
+            if str(match["operation_id"]) != op_id:
+                continue
+            snapshot = match["source_snapshot"]
+            if (
+                match.get("current_fingerprint") != snapshot.get("fingerprint")
+                or match.get("current_amount") is None
+                or Decimal(str(match["current_amount"])) < Decimal(str(match["amount"]))
+            ):
+                uncertain = True
+                continue
+            coverage = match.get("current_coverage")
+            # A report link is evidence only when the native calculator actually consumes it.
+            if coverage == "included":
+                covered += Decimal(str(match["amount"]))
+                valid_matched += Decimal(str(match["amount"]))
+            elif coverage == "not_included":
+                valid_matched += Decimal(str(match["amount"]))
+            elif coverage == "returned":
+                # Evaluated against the exact native row below.
+                valid_matched += Decimal(str(match["amount"]))
+            else:
+                uncertain = True
+        if (
+            op["method"] == "marketplace"
+            or op.get("kind") in ("carrier_reimbursement", "commission_refund")
+        ) and valid_matched < total:
+            uncertain = True
+        if uncertain:
+            unknown.update(key(a) for a in allocations)
+        allocated = split_amount(max(total - covered, Decimal(0)), allocations)
+        for a in allocations:
+            k = key(a)
+            expenses[k] = (
+                expenses.get(k, Decimal(0)) + sign * allocated[str(a["split_order_id"])]
+            )
+            if incoming:
+                reimbursements[k] = (
+                    reimbursements.get(k, Decimal(0))
+                    + allocated[str(a["split_order_id"])]
+                )
+            case_ids.setdefault(k, set()).add(str(a["case_id"]))
+
+    for index, row in out.iterrows():
+        if pd.isna(row.get("seller_id")):
+            continue
+        key = (
+            int(row["seller_id"]),
+            str(row.get("order_id_str", row.get("order_id"))),
+            str(row.get("offer_id")),
+        )
+        relevant = [
+            i
+            for i in items
+            if (int(i["seller_id"]), str(i["order_number"]), str(i["offer_id"])) == key
+        ]
+        if (
+            not relevant
+            and key not in expenses
+            and key not in plans
+            and key not in unknown
+        ):
+            continue
+        monetary = expenses.get(key, Decimal(0))
+        planned = plans.get(key, Decimal(0))
+        correction = Decimal(0)
+        incomplete = key in unknown or any(
+            i.get("replacement_cost_unknown", False) for i in relevant
+        )
+        pending = False
+        recovered = Decimal(0)
+        loss = Decimal(0)
+        # Many compensation cases may concern the same unit. Inventory is adjusted once;
+        # a physical return result takes precedence over compensation-only observations.
+        unit_costs = {}
+        managed_units = {}
+        for position, item in enumerate(relevant):
+            if item["stage"] == "cancelled":
+                continue
+            unit_id = item.get("split_order_id", f"fixture:{position}")
+            snapshot = dec(item.get("purchase_cost"))
+            if snapshot is not None:
+                unit_costs.setdefault(unit_id, set()).add(snapshot)
+            if len(unit_costs.get(unit_id, ())) > 1:
+                incomplete = True
+
+            if unit_id not in managed_units or item["requires_return"]:
+                managed_units[unit_id] = item
+        q = dec(row.get("quantity"))
+        basis = dec(row.get("effective_purchase_total"))
+        recognized = dec(row.get("base_purchase_expensed"))
+        estimated_cost = False
+        if not relevant and (key in expenses or key in plans):
+            if basis is None or basis <= 0:
+                incomplete = True
+
+        for item in managed_units.values():
+            cost = dec(item.get("purchase_cost"))
+            if cost is None:
+                cost = dec(item.get("procurement_cost"))
+            if cost is None and basis is not None and basis > 0 and q and q > 0:
+                cost = basis / q
+                estimated_cost = True
+            if cost is None or recognized is None or not q or q <= 0:
+                incomplete = True
+                continue
+            target = Decimal(0) if item["stage"] == "stocked" else cost
+            if recognized == 0:
+                unit_recognized = Decimal(0)
+            elif basis is not None and abs(recognized - basis) < Decimal(".01"):
+                unit_recognized = recognized / q
+                if q > 1 and abs(unit_recognized - cost) >= Decimal(".01"):
+                    incomplete = True
+                    continue
+            elif item.get("native_refund"):
+                unit_recognized = Decimal(0)
+            else:
+                incomplete = True
+                continue
+            correction += unit_recognized - target
+            if item["requires_return"]:
+                if item["stage"] == "stocked":
+                    recovered += cost
+                elif item["stage"] in ("defective", "lost"):
+                    loss += cost
+                elif item["stage"] != "external_received":
+                    pending = True
+        # Logistics already recognized by the native returned-order formula are covered once.
+        for op_id, allocs in by_operation.items():
+            matching_allocs = [
+                a
+                for a in allocs
+                if (int(a["seller_id"]), str(a["order_number"]), str(a["offer_id"]))
+                == key
+            ]
+            if (
+                not matching_allocs
+                or allocs[0]["state"] != "posted"
+                or allocs[0]["payer"] != "company"
+            ):
+                continue
+            returned_coverage = sum(
+                (
+                    Decimal(str(m["amount"]))
+                    for m in matches
+                    if str(m["operation_id"]) == op_id
+                    and m.get("current_coverage") == "returned"
+                    and m.get("current_fingerprint")
+                    == m["source_snapshot"].get("fingerprint")
+                ),
+                Decimal(0),
+            )
+            if returned_coverage and bool(row.get("is_returned", False)):
+                share = split_amount(returned_coverage, allocs)
+                monetary -= (
+                    Decimal(-1)
+                    if allocs[0].get("kind")
+                    in (
+                        "supplier_reimbursement",
+                        "carrier_reimbursement",
+                        "commission_refund",
+                    )
+                    else Decimal(1)
+                ) * sum(
+                    (share[str(a["split_order_id"])] for a in matching_allocs),
+                    Decimal(0),
+                )
+        original = dec(row.get("profit"))
+        original_actual = dec(row.get("actual_profit"))
+        out.at[index, "profit_before_after_sales"] = (
+            float(original) if original is not None else np.nan
+        )
+        out.at[index, "after_sales_cost_estimated"] = estimated_cost
+        out.at[index, "after_sales_expense"] = float(monetary)
+        out.at[index, "after_sales_gross_expense"] = float(
+            monetary + reimbursements.get(key, Decimal(0))
+        )
+        out.at[index, "after_sales_reimbursement"] = float(
+            reimbursements.get(key, Decimal(0))
+        )
+        out.at[index, "after_sales_planned_gross_expense"] = float(
+            planned + planned_reimbursements.get(key, Decimal(0))
+        )
+        out.at[index, "after_sales_planned_reimbursement"] = float(
+            planned_reimbursements.get(key, Decimal(0))
+        )
+        out.at[index, "after_sales_planned"] = float(planned)
+        out.at[index, "inventory_recovery_amount"] = float(recovered)
+        out.at[index, "inventory_loss_amount"] = float(loss)
+        out.at[index, "inventory_profit_adjustment"] = float(correction)
+        out.at[index, "after_sales_state"] = (
+            "needs_reconciliation"
+            if incomplete
+            else ("provisional" if pending else "complete")
+        )
+        final = (
+            original - monetary + correction
+            if original is not None and not incomplete
+            else None
+        )
+        out.at[index, "profit"] = float(final) if final is not None else np.nan
+        native_cost = dec(row.get("our_costs"))
+        if native_cost is not None:
+            out.at[index, "our_costs"] = (
+                float(native_cost + monetary - correction) if not incomplete else np.nan
+            )
+        sale = dec(row.get("sell_price"))
+        for name, denominator in [
+            ("margin_pct", sale),
+            ("margin_fact_pct", sale),
+            ("margin_fact_on_cost_pct", basis),
+        ]:
+            out.at[index, name] = (
+                float(final / denominator * 100)
+                if final is not None and denominator
+                else np.nan
+            )
+        out.at[index, "projected_profit"] = (
+            float(final - planned) if final is not None else np.nan
+        )
+        out.at[index, "actual_profit"] = (
+            float(original_actual - monetary + correction)
+            if original_actual is not None and not incomplete
+            else np.nan
+        )
+        out.at[index, "profit_no_promo"] = (
+            float(dec(row["profit_no_promo"]) - monetary + correction)
+            if dec(row.get("profit_no_promo")) is not None and not incomplete
+            else np.nan
+        )
+        out.at[index, "margin_fact_rub"] = float(final) if final is not None else np.nan
+        out.at[index, "is_loss"] = final < 0 if final is not None else False
+    return out
