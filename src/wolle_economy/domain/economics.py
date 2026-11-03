@@ -828,6 +828,22 @@ def calc_economics(df: pd.DataFrame) -> pd.DataFrame:
     else:
         delivered_q = q
 
+    # Строка отчёта может покрывать несколько штук (например, 62989944387).
+    # COUNT строк надёжен только для прежнего поштучного формата. При полной
+    # доставке без возвратов списываем всю позицию независимо от числа строк.
+    fully_delivered = df["fulfillment_status"].isin(
+        ("Доставлен", "Доставлен покупателю", "DELIVERED")
+    )
+    for status_field in ("order_status", "fulfillment_status"):
+        if status_field in df:
+            fully_delivered &= ~df[status_field].isin(RETURNED_STATUSES)
+    for amount_field in ("returned_sell_price", "customer_refund"):
+        if amount_field in df:
+            fully_delivered &= pd.to_numeric(
+                df[amount_field], errors="coerce"
+            ).fillna(0).eq(0)
+    delivered_q = delivered_q.where(~fully_delivered, q)
+
     df = _compute_base_totals(df, q)
     df = _compute_payouts(df, q)
 
