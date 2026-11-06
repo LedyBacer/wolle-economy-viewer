@@ -678,7 +678,8 @@ def _compute_profits(df: pd.DataFrame, our_costs: pd.Series) -> pd.DataFrame:
         - df["market_services"].fillna(0)
     )
     df["wallet_balance_change"] = df["bonus_points"] + promo + boost_wallet_spend
-    df["economics_is_estimated"] = ~df["uses_fact_purchase_price"]
+    settled = df["payment_status"].eq("Переведён") & df["fulfillment_status"].isin(("Доставлен", "Доставлен покупателю", "DELIVERED"))
+    df["economics_is_estimated"] = ~df["uses_fact_purchase_price"] | ~settled
 
     df["diff_from_min_price"] = df["sell_price"].fillna(0) - df["min_sell_price_total"]
     return df

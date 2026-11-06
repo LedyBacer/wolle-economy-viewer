@@ -61,11 +61,15 @@ def refund_aware_cache(**options):
         def wrapped(*args, **kwargs):
             revision = 0
             bucket = 0
+            if get_settings().carrier_economics_enabled:
+                from wolle_economy.db.queries import CARRIER_REVISION_SQL
+                with get_engine().connect() as conn:
+                    revision = tuple(conn.execute(CARRIER_REVISION_SQL).one())
             if get_settings().refund_cases_enabled:
                 from wolle_economy.db.queries import AFTER_SALES_VERSION_SQL
 
                 with get_engine().connect() as conn:
-                    revision = conn.execute(text(AFTER_SALES_VERSION_SQL)).scalar_one()
+                    revision = (revision, conn.execute(text(AFTER_SALES_VERSION_SQL)).scalar_one())
                 bucket = int(time.time() // 60)
             return cached(revision, bucket, *args, **kwargs)
 
@@ -206,6 +210,12 @@ def _load_ym_orders_impl(
     )
     orders = orders.merge(supplier_prices, on="item_id", how="left")
     result = calc_economics(merge_with_payments(orders, payments))
+    if get_settings().carrier_economics_enabled and not result.empty:
+        from wolle_economy.db.queries import CARRIER_EVIDENCE_SQL
+        from wolle_economy.domain.carrier_expenses import apply_carrier_expenses
+        with engine.connect() as connection:
+            evidence=[dict(r) for r in connection.execute(CARRIER_EVIDENCE_SQL, {"marketplace":"yandex", "item_ids":[int(v) for v in result.item_id]}).mappings()]
+        result = apply_carrier_expenses(result, evidence)
     return (
         result.loc[result["offer_id"].astype(str).eq(str(offer_id))]
         if offer_id is not None
@@ -291,7 +301,14 @@ def _load_mm_orders_impl(
     if "poizon_price" not in df_dbs.columns:
         df_dbs["poizon_price"] = np.nan
 
-    return calc_mm_economics(pd.concat([df_dbs, df_poizon], ignore_index=True))
+    result=calc_mm_economics(pd.concat([df_dbs, df_poizon], ignore_index=True))
+    if get_settings().carrier_economics_enabled and not result.empty:
+        from wolle_economy.db.queries import CARRIER_EVIDENCE_SQL
+        from wolle_economy.domain.carrier_expenses import apply_mm_carrier_expenses
+        with engine.connect() as connection:
+            evidence=[dict(r) for r in connection.execute(CARRIER_EVIDENCE_SQL, {"marketplace":"megamarket","item_ids":[int(v) for v in result.item_id]}).mappings()]
+        result=apply_mm_carrier_expenses(result,evidence)
+    return result
 
 
 @st.cache_data(ttl=get_settings().cache_ttl, show_spinner=False)

@@ -25,6 +25,7 @@ class Settings(BaseSettings):
 
     # TTL кэшей Streamlit и полного снимка API (секунды)
     refund_cases_enabled: bool = False
+    carrier_economics_enabled: bool = False
     cache_ttl: int = Field(default=3600)
 
 

@@ -839,6 +839,7 @@ SELECT
     o.id                          AS mm_order_id,
     o.shipment_id                 AS order_id,
     i.id                          AS item_id,
+    to_jsonb(i)->'pricing_snapshot' AS pricing_snapshot,
 
     -- Время и продавец
     o.created_at                  AS created_at,
@@ -961,6 +962,7 @@ SELECT
     o.id                          AS mm_order_id,
     o.shipment_id                 AS order_id,
     i.id                          AS item_id,
+    to_jsonb(i)->'pricing_snapshot' AS pricing_snapshot,
 
     -- Время и продавец
     o.created_at                  AS created_at,
@@ -1950,3 +1952,57 @@ def after_sales_context(conn, seller_id=None, order_number=None, include_case=No
             AFTER_SALES_MATCHES_SQL,
         )
     )
+
+# Включается только после миграции 20261103_carrier_tariffs.sql.
+CARRIER_EVIDENCE_SQL = text("""
+WITH latest AS (
+ SELECT DISTINCT ON(item_id) item_id,effective_legacy_unit_rub,reason correction_reason
+ FROM e_com.carrier_expense_corrections WHERE marketplace=:marketplace
+ ORDER BY item_id,version DESC
+), reconciled AS (
+ SELECT DISTINCT ON(document_id) document_id,decision FROM e_com.carrier_document_reconciliations ORDER BY document_id,version DESC
+), actual_parcels AS (
+ SELECT a.item_id,d.parcel_id,
+        sum(CASE WHEN r.decision='same_payment' OR original_r.decision='same_payment' THEN 0 WHEN d.operation='payment' THEN a.amount_rub ELSE -a.amount_rub END) amount_rub,
+        max(a.quantity) FILTER(WHERE d.operation='payment') quantity,
+        bool_or(a.allocation_estimated) allocation_estimated,bool_and(r.decision IS NOT NULL AND NOT (d.operation='refund' AND original_r.decision='same_payment')) resolved
+ FROM e_com.carrier_financial_documents d JOIN e_com.carrier_document_allocations a ON a.document_id=d.id
+ LEFT JOIN reconciled r ON r.document_id=d.id
+ LEFT JOIN e_com.carrier_financial_documents original ON d.operation='refund' AND original.carrier=d.carrier AND original.document_id=d.original_document_id AND original.parcel_id=d.parcel_id AND original.operation='payment'
+ LEFT JOIN reconciled original_r ON original_r.document_id=original.id
+ WHERE d.marketplace=:marketplace AND a.item_id=ANY(:item_ids) GROUP BY a.item_id,d.parcel_id
+), latest_batches AS (
+ SELECT DISTINCT ON(seller_id,order_id) id FROM e_com.carrier_parcel_plan_batches
+ WHERE marketplace=:marketplace ORDER BY seller_id,order_id,id DESC
+), planned_parcels AS (
+ SELECT p.* FROM e_com.carrier_parcel_plan_items p JOIN latest_batches b ON b.id=p.batch_id
+ WHERE p.item_id=ANY(:item_ids)
+), slots AS (
+ SELECT coalesce(a.item_id,p.item_id) item_id,
+        coalesce(a.amount_rub,p.amount_rub) known_amount,
+        a.amount_rub fact_amount,
+        greatest(coalesce(a.quantity,0),coalesce(p.quantity,0)) known_quantity,
+        coalesce(a.quantity,CASE WHEN p.amount_rub=0 THEN p.quantity ELSE 0 END) fact_quantity,
+        (a.amount_rub IS NULL AND p.amount_rub>0) has_unpaid_parcel,
+        coalesce(a.allocation_estimated,p.allocation_estimated,false) allocation_estimated,
+        coalesce(a.resolved,false) reconciliation_resolved
+ FROM actual_parcels a FULL JOIN planned_parcels p ON a.item_id=p.item_id AND a.parcel_id=p.parcel_id
+), amounts AS (
+ SELECT item_id,sum(known_amount) carrier_known_amount_rub,sum(fact_amount) carrier_fact_amount_rub,
+ sum(known_quantity) carrier_known_quantity,sum(fact_quantity) carrier_fact_quantity,
+ bool_or(has_unpaid_parcel) carrier_has_unpaid_parcel,bool_or(allocation_estimated) allocation_estimated,
+ bool_and(reconciliation_resolved) reconciliation_resolved FROM slots GROUP BY item_id
+)
+SELECT coalesce(l.item_id,p.item_id) item_id,l.effective_legacy_unit_rub,l.correction_reason,
+       p.carrier_fact_amount_rub,p.carrier_known_amount_rub,p.carrier_known_quantity,p.carrier_fact_quantity,
+       p.carrier_has_unpaid_parcel,p.allocation_estimated,p.reconciliation_resolved
+FROM latest l FULL JOIN amounts p USING(item_id)
+WHERE coalesce(l.item_id,p.item_id)=ANY(:item_ids)
+""")
+
+CARRIER_REVISION_SQL = text("""
+ SELECT (SELECT coalesce(max(id),0) FROM e_com.carrier_financial_documents) documents,
+        (SELECT coalesce(max(id),0) FROM e_com.carrier_expense_corrections) corrections,
+        (SELECT coalesce(max(id),0) FROM e_com.carrier_document_reconciliations) reconciliations,
+        (SELECT coalesce(max(id),0) FROM e_com.carrier_parcel_plan_batches) parcels
+""")
