@@ -122,6 +122,9 @@ def read_order_economics(
     """Возвращает все колонки строки из режима «Показать все колонки»."""
     key: OrderKey = (seller_id, order_id, offer_id)
     cached = order_cache.lookup(key)
+    if get_settings().carrier_economics_enabled:
+        # Корректировки и импорт документов должны быть видны сразу, не через TTL.
+        cached = CacheLookup(CacheStatus.MISS, cached.marketplace_code)
     if get_settings().refund_cases_enabled:
         from sqlalchemy import text
         from wolle_economy.db.engine import get_engine
