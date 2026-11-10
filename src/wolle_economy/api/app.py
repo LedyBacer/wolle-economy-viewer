@@ -195,7 +195,11 @@ def refund_case_economics(case_id: str, preview: bool = False):
     from decimal import Decimal
     from sqlalchemy import text
     from wolle_economy.db.engine import get_engine
-    from wolle_economy.db.queries import AFTER_SALES_CASE_SQL, after_sales_context
+    from wolle_economy.db.queries import (
+        AFTER_SALES_CASE_SQL,
+        POIZON_CONSIGNMENT_ECONOMICS_SQL,
+        after_sales_context,
+    )
     from wolle_economy.domain.loader import load_order_economics_data
     from wolle_economy.domain.economics import apply_refund_cases
     import pandas as pd
@@ -217,6 +221,20 @@ def refund_case_economics(case_id: str, preview: bool = False):
         items, operations, matches = after_sales_context(
             conn, case["seller_id"], case["order_number"], case_id if preview else None
         )
+        consignment = None
+        if conn.execute(
+            text("SELECT to_regclass('e_com.refund_poizon_sales')")
+        ).scalar():
+            summary = (
+                conn.execute(
+                    text(POIZON_CONSIGNMENT_ECONOMICS_SQL), {"case_id": case_id}
+                )
+                .mappings()
+                .one()
+            )
+            consignment = {
+                k: str(v) if isinstance(v, Decimal) else v for k, v in summary.items()
+            }
     full_context = (items, operations, matches)
     operations = [o for o in operations if str(o["case_id"]) == case_id]
     case_items = [i for i in items if str(i["case_id"]) == case_id]
@@ -254,6 +272,7 @@ def refund_case_economics(case_id: str, preview: bool = False):
         "calculation_version": "refund-cases-v2",
         "economics_revision": case["revision"],
         "case_id": case_id,
+        "consignment": consignment,
         "posted_expense": str(total),
         "planned_expense": str(planned),
         "profit": None,

@@ -75,6 +75,14 @@ def calc_mm_economics(df: pd.DataFrame) -> pd.DataFrame:
     df["supplier_price_fact"] = spf
     df["effective_purchase_total"] = np.where(spf > 0, spf * q, df["base_price_total"])
     df["uses_fact_purchase_price"] = spf > 0
+    owner_cost = pd.to_numeric(
+        df.get("consignment_owner_cost", pd.Series(np.nan, index=df.index)),
+        errors="coerce",
+    )
+    resale = owner_cost.notna()
+    df.loc[resale, "effective_purchase_total"] = owner_cost[resale]
+    df.loc[resale, "uses_fact_purchase_price"] = True
+
 
     # Упаковка и переходник хранятся за единицу. Для исторических строк без
     # сохранённого тарифа упаковки используем стандартные 50 ₽, как в других МП.
@@ -186,6 +194,10 @@ def calc_mm_economics(df: pd.DataFrame) -> pd.DataFrame:
             ),
         ),
     )
+
+    returned_owner_cost = owner_cost.where(df["is_returned"] & resale, 0).fillna(0)
+    df["our_costs"] += returned_owner_cost
+    df["base_purchase_expensed"] += returned_owner_cost
 
     # ── Прибыль ────────────────────────────────────────────────────────────
     promo = df["promo_discounts"].fillna(0)  # отрицательная сумма

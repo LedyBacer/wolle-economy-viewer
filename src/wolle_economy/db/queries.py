@@ -699,6 +699,7 @@ latest_stock_movement AS (
         smt.type,
         smt.warehouse_new_id
     FROM e_com.stock_movement_transactions smt
+    WHERE smt.consignment_unit_id IS NULL
     ORDER BY smt.all_split_orders_id, smt.created_at DESC
 ),
 first_stock_transaction AS (
@@ -725,6 +726,7 @@ source_order_mapping AS (
 -- что порождает несколько строк в source_order_mapping. Берём одну — цена одинакова.
 SELECT DISTINCT ON (yai.id)
     yai.id AS item_id,
+    CASE WHEN resale.is_consignment THEN 0 ELSE
     CASE
         -- Дефект исторических данных: для части валютных заказов ru_custom_price
         -- содержит custom_price в исходной валюте. В таком случае используем
@@ -733,12 +735,22 @@ SELECT DISTINCT ON (yai.id)
          AND ots.ru_custom_price = ots.custom_price
         THEN COALESCE(ots.ru_price, 0)
         ELSE COALESCE(ots.ru_custom_price, ots.ru_price, 0)
-    END AS supplier_price_fact
+    END END AS supplier_price_fact,
+    CASE WHEN resale.is_consignment THEN coalesce(resale.owner_amount,0) END AS consignment_owner_cost
 FROM e_com.ya_order_items yai
 JOIN e_com.ya_orders o ON yai.order_id = o.id
 LEFT JOIN source_order_mapping som ON yai.id = som.ya_order_item_id
 LEFT JOIN e_com.all_split_orders aso_source ON som.source_all_split_orders_id = aso_source.id
 LEFT JOIN e_com.order_to_supplier ots ON aso_source.order_to_supplier_id = ots.id
+LEFT JOIN LATERAL (
+    SELECT count(*)>0 AS is_consignment,
+        sum(s.price-s.fee-coalesce((s.data#>>'{owner_payment_recovery,amount}')::numeric,0))
+            FILTER (WHERE s.state<>'returned' OR s.data ? 'payment_reference') AS owner_amount
+    FROM e_com.all_split_orders split
+    LEFT JOIN e_com.refund_poizon_sales s ON s.order_id=split.id AND s.data->>'source'='yandex'
+    WHERE split.ya_order_items_id=yai.id
+        AND (split.consignment_unit_id IS NOT NULL OR split.consignment_conflict IS NOT NULL)
+) resale ON true
 """
 
 
@@ -859,6 +871,20 @@ _MM_FR_AGG = """
 # Подзапрос: фактическая закупочная цена через all_split_orders
 # ---------------------------------------------------------------------------
 # DISTINCT ON: при quantity > 1 может быть несколько all_split_orders на позицию.
+def _consignment_owner_cost_join(platform, split_key, order_item):
+    return f"""
+    LEFT JOIN LATERAL (
+        SELECT sum(CASE WHEN sale.state<>'returned' OR sale.data ? 'payment_reference'
+            THEN sale.price-sale.fee-coalesce((sale.data#>>'{{owner_payment_recovery,amount}}')::numeric,0)
+            ELSE 0 END) AS amount
+        FROM e_com.all_split_orders split
+        LEFT JOIN e_com.refund_poizon_sales sale ON sale.order_id=split.id AND sale.data->>'source'='{platform}'
+        WHERE split.{split_key}={order_item} AND split.consignment_offer_window_id IS NOT NULL
+            AND (split.consignment_unit_id IS NOT NULL OR split.consignment_conflict IS NOT NULL)
+    ) owner_cost ON true
+    """
+
+
 _MM_SPF = """
     SELECT DISTINCT ON (aso.mm_dbs_order_item_id)
         aso.mm_dbs_order_item_id,
@@ -945,6 +971,7 @@ SELECT
 
     -- Фактическая закупочная цена и поставщик
     COALESCE(spf.supplier_price_fact, 0) AS supplier_price_fact,
+    owner_cost.amount AS consignment_owner_cost,
     spf.supplier_name                    AS supplier_name,
 
     -- Фактическая выплата из финансовых отчётов ММ
@@ -966,6 +993,7 @@ LEFT JOIN ({_MM_PR_AGG}) pr
     ON pr.mm_dbs_orders_id1 = o.id
 LEFT JOIN ({_MM_SPF}) spf
     ON spf.mm_dbs_order_item_id = i.id
+{_consignment_owner_cost_join("mm", "mm_dbs_order_item_id", "i.id")}
 LEFT JOIN ({_MM_FR_AGG}) fr
     ON fr.shipment_id = o.shipment_id
 WHERE ps.platform_for_sell_id = 5
@@ -1059,6 +1087,7 @@ SELECT
 
     -- Фактическая закупочная цена и поставщик (через all_split_orders)
     COALESCE(spf.supplier_price_fact, 0) AS supplier_price_fact,
+    owner_cost.amount AS consignment_owner_cost,
     spf.supplier_name                    AS supplier_name,
 
     -- Цена товара на Poizon (альтернативная закупочная для аналитики)
@@ -1083,6 +1112,7 @@ LEFT JOIN ({_MM_PR_AGG}) pr
     ON pr.mm_dbs_orders_id1 = o.id
 LEFT JOIN ({_MM_SPF}) spf
     ON spf.mm_dbs_order_item_id = i.id
+{_consignment_owner_cost_join("mm", "mm_dbs_order_item_id", "i.id")}
 LEFT JOIN ({_MM_FR_AGG}) fr
     ON fr.shipment_id = o.shipment_id
 WHERE ps.platform_for_sell_id = 5
@@ -1192,6 +1222,7 @@ latest_stock_movement AS (
         smt.type,
         smt.warehouse_new_id
     FROM e_com.stock_movement_transactions smt
+    WHERE smt.consignment_unit_id IS NULL
     ORDER BY smt.all_split_orders_id, smt.created_at DESC
 ),
 first_stock_transaction AS (
@@ -1389,7 +1420,7 @@ WHERE ps.platform_for_sell_id = 2
 # Wildberries
 # ═══════════════════════════════════════════════════════════════════════════
 
-_WB_ORDER_ITEMS_SELECT = """
+_WB_ORDER_ITEMS_SELECT = f"""
 WITH
 wb_report_rate AS (
     SELECT
@@ -1408,6 +1439,7 @@ latest_stock_movement AS (
         smt.type,
         smt.warehouse_new_id
     FROM e_com.stock_movement_transactions smt
+    WHERE smt.consignment_unit_id IS NULL
     ORDER BY smt.all_split_orders_id, smt.created_at DESC
 ),
 first_stock_transaction AS (
@@ -1496,6 +1528,7 @@ SELECT
     END AS fulfillment_status,
     o.base_price AS base_price,
     COALESCE(sp.supplier_price_fact, 0) AS supplier_price_fact,
+    owner_cost.amount AS consignment_owner_cost,
     COALESCE(o.ff_fee, 50) AS ff_fee,
     COALESCE(o.socket_adapter_fee, 0) AS socket_adapter_fee,
     o.final_price AS final_price,
@@ -1535,6 +1568,7 @@ JOIN e_com.wb_feed_items fi ON fi.id = o.feed_item_id
 JOIN e_com.platform_sellers ps ON ps.id = o.seller_id
 JOIN wb_report_rate rr ON rr.wb_order_id = o.id
 LEFT JOIN supplier_prices sp ON sp.wb_order_id = o.id
+{_consignment_owner_cost_join("wb", "wb_orders_id", "o.id")}
 LEFT JOIN LATERAL (
     SELECT
         SUM(
@@ -1849,6 +1883,7 @@ JOIN (
             smt.type,
             smt.warehouse_new_id
         FROM e_com.stock_movement_transactions smt
+        WHERE smt.consignment_unit_id IS NULL
         ORDER BY smt.all_split_orders_id, smt.created_at DESC
     ),
     first_stock_transaction AS (
@@ -1961,6 +1996,10 @@ FROM e_com.refund_financial_operations f JOIN e_com.refund_cases c ON c.id=f.cas
 JOIN e_com.refund_financial_allocations a ON a.operation_id=f.id
 JOIN e_com.all_split_orders o ON o.id=a.split_order_id
 WHERE (c.economics_managed OR c.id=CAST(:include_case AS uuid)) AND c.state IN ('open','resolved') AND f.kind<>'reversal' AND f.state IN ('planned','posted')
+AND NOT EXISTS (
+    SELECT 1 FROM e_com.refund_external_tasks t WHERE t.id=f.external_task_id
+    AND t.kind='consignment' AND f.kind IN ('return_delivery','other_expense')
+)
 AND (:seller_id IS NULL OR c.seller_id=:seller_id)
 AND (:order_number IS NULL OR c.order_number=:order_number)
 """
@@ -2051,3 +2090,31 @@ CARRIER_REVISION_SQL = text("""
         (SELECT coalesce(max(id),0) FROM e_com.carrier_document_reconciliations) reconciliations,
         (SELECT coalesce(max(id),0) FROM e_com.carrier_parcel_plan_batches) parcels
 """)
+
+POIZON_CONSIGNMENT_ECONOMICS_SQL = """
+WITH sales AS (
+    SELECT s.* FROM e_com.refund_poizon_sales s
+    JOIN e_com.refund_poizon_units u ON u.id=s.unit_id
+    WHERE u.case_id=CAST(:case_id AS uuid)
+), costs AS (
+    SELECT f.* FROM e_com.refund_financial_operations f
+    JOIN e_com.refund_external_tasks t ON t.id=f.external_task_id
+    WHERE f.case_id=CAST(:case_id AS uuid) AND t.kind='consignment'
+    AND f.kind IN ('return_delivery','other_expense') AND f.payer='company'
+    AND f.state IN ('posted','planned')
+)
+SELECT
+    coalesce(sum(s.price) FILTER (WHERE s.state<>'returned'),0) AS sale_price,
+    coalesce(sum(s.fee) FILTER (WHERE s.state<>'returned'),0) AS fee,
+    coalesce(sum(s.price-s.fee) FILTER (WHERE s.state<>'returned'),0) AS owner_amount,
+    coalesce(sum(s.price-s.fee) FILTER (WHERE s.data ? 'payment_reference'),0) AS paid,
+    (SELECT coalesce(sum(coalesce(rub_amount,amount)) FILTER (
+        WHERE state='posted' AND (currency='RUB' OR rub_amount IS NOT NULL)),0) FROM costs) AS posted_expense,
+    (SELECT coalesce(sum(coalesce(rub_amount,amount)) FILTER (
+        WHERE state='planned' AND (currency='RUB' OR rub_amount IS NOT NULL)),0) FROM costs) AS planned_expense,
+    coalesce(bool_or(s.state<>'returned' AND (s.state='disputed'
+        OR s.data->>'price_review'='true' OR (s.order_id IS NOT NULL AND NOT(s.data ? 'reconciliation')))),false)
+    OR EXISTS (SELECT 1 FROM costs WHERE (currency<>'RUB' AND rub_amount IS NULL)
+               OR e_com.refund_financial_needs_reconciliation(id)) AS needs_reconciliation
+FROM sales s
+"""

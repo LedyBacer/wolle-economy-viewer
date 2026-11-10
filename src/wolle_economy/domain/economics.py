@@ -330,6 +330,13 @@ def _compute_base_totals(df: pd.DataFrame, q: pd.Series) -> pd.DataFrame:
         df["base_price_total"],
     )
     df["uses_fact_purchase_price"] = spf > 0
+    if "consignment_owner_cost" in df.columns:
+        owner_cost = pd.to_numeric(df["consignment_owner_cost"], errors="coerce")
+        resale = owner_cost.notna()
+        # The resale has a contractual payment to the owner instead of procurement.
+        # SQL returns the total obligation across split units, so do not multiply by quantity.
+        df.loc[resale, "effective_purchase_total"] = owner_cost[resale]
+        df.loc[resale, "uses_fact_purchase_price"] = True
 
     # Фиксированная доставка — наш расход для любого магазина.
     cdn = pd.to_numeric(

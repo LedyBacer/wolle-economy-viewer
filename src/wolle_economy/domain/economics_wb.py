@@ -46,6 +46,14 @@ def calc_wb_economics(df: pd.DataFrame) -> pd.DataFrame:
         out["base_price_total"],
     )
     out["uses_fact_purchase_price"] = out["supplier_price_fact"] > 0
+    owner_cost = pd.to_numeric(
+        out.get("consignment_owner_cost", pd.Series(np.nan, index=out.index)),
+        errors="coerce",
+    )
+    resale = owner_cost.notna()
+    out.loc[resale, "effective_purchase_total"] = owner_cost[resale]
+    out.loc[resale, "uses_fact_purchase_price"] = True
+
 
     out["ff_fee"] = _num(
         out.get("ff_fee", pd.Series(50.0, index=out.index)), default=50.0
@@ -193,6 +201,11 @@ def calc_wb_economics(df: pd.DataFrame) -> pd.DataFrame:
         ],
         default=0.0,
     )
+
+    returned_owner_cost = owner_cost.where(returned_once & resale, 0).fillna(0)
+    out["our_costs"] += returned_owner_cost
+    out["base_purchase_expensed"] += returned_owner_cost
+    base_profit = base_profit - returned_owner_cost
 
     out["profit_no_promo"] = base_profit
     out["profit"] = base_profit + out["promo_discounts"]

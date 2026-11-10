@@ -122,6 +122,7 @@ def serialize_order_row(row: pd.Series, marketplace_code: str) -> dict[str, Any]
     """Возвращает только колонки режима «Показать все колонки»."""
     columns = list(ALL_COLUMNS_BY_MARKETPLACE[marketplace_code]) + [
         "after_sales_cost_estimated",
+        "consignment_owner_cost",
         "profit_before_after_sales",
         "after_sales_expense",
         "after_sales_planned",
