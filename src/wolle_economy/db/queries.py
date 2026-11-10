@@ -1175,11 +1175,30 @@ WHERE ps.platform_for_sell_id = 5
 
 _OZ_ORDER_ITEMS_SELECT = """
 WITH
+ozon_commission_pairs AS (
+    -- Ozon can report the same sale fee in both sale_commission and services.
+    -- Pair equal amounts one-to-one within the same operation and order item.
+    SELECT
+        id,
+        service_name,
+        ROW_NUMBER() OVER (
+            PARTITION BY ozon_orders_id, operation_id, price, service_name ORDER BY id
+        ) AS occurrence,
+        COUNT(*) FILTER (WHERE service_name = 'SaleCommission') OVER (
+            PARTITION BY ozon_orders_id, operation_id, price
+        ) AS sale_commission_count
+    FROM e_com.ozon_order_transactions
+    WHERE service_name IN ('Commission', 'SaleCommission')
+      AND operation_id IS NOT NULL AND ozon_orders_id IS NOT NULL AND price IS NOT NULL
+),
 ozon_transactions_agg AS (
     SELECT
         ozon_orders_id,
         SUM(CASE WHEN service_name_ru ILIKE '%%вознаграждение за продажу%%' THEN -price ELSE 0 END) AS category_fee_fact,
-        SUM(CASE WHEN operation_type_name ILIKE '%%Оплата эквайринга%%' THEN -price ELSE 0 END) AS acquiring_fee_fact,
+        SUM(CASE
+                WHEN service_name = 'Acquiring' OR operation_type_name ILIKE '%%Оплата эквайринга%%'
+                THEN -price ELSE 0
+            END) AS acquiring_fee_fact,
         SUM(CASE
                 WHEN service_name IN (
                     'MarketplaceServiceItemRedistributionLastMilePVZ',
@@ -1214,6 +1233,10 @@ ozon_transactions_agg AS (
             END) AS late_recommend_penalty,
         COUNT(*) AS report_rows
     FROM e_com.ozon_order_transactions
+    WHERE id NOT IN (
+        SELECT id FROM ozon_commission_pairs
+        WHERE service_name = 'Commission' AND occurrence <= sale_commission_count
+    )
     GROUP BY ozon_orders_id
 ),
 latest_stock_movement AS (
