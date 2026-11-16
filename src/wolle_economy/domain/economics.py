@@ -1160,10 +1160,13 @@ def apply_refund_cases(frame, items, operations, matches):
                 float(native_cost + monetary - correction) if not incomplete else np.nan
             )
         sale = dec(row.get("sell_price"))
+        purchase_basis = basis
+        if row.get("mm_cancellation_finance_status") in ("settled", "unallocated", "missing_report"):
+            purchase_basis = recognized
         for name, denominator in [
             ("margin_pct", sale),
             ("margin_fact_pct", sale),
-            ("margin_fact_on_cost_pct", basis),
+            ("margin_fact_on_cost_pct", purchase_basis),
         ]:
             out.at[index, name] = (
                 float(final / denominator * 100)

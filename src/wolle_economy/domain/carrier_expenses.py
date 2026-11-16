@@ -96,10 +96,19 @@ def apply_mm_carrier_expenses(frame,evidence):
         out.at[index,'our_costs']=float(Decimal(str(row['our_costs']))+own)
         for key in ['profit','profit_no_promo','margin_fact_rub']:
             if key in out:out.at[index,key]=float(Decimal(str(row[key]))-own)
-        if row.get('payment_status')=='Переведён':
-            out.at[index,'actual_profit']=float(Decimal(str(row['actual_profit']))-own)
-        for key,base in [('margin_pct','sell_price'),('margin_fact_pct','sell_price'),('margin_fact_on_cost_pct','effective_purchase_total')]:
-            if row.get(base):out.at[index,key]=out.at[index,'profit']/row[base]*100
+        cancelled_poizon = row.get("mm_cancellation_finance_status") in (
+            "settled", "missing_report", "unallocated"
+        )
+        if cancelled_poizon or row.get("payment_status") == "Переведён":
+            out.at[index, "actual_profit"] = float(Decimal(str(row["actual_profit"])) - own)
+        purchase_basis = "base_purchase_expensed" if cancelled_poizon else "effective_purchase_total"
+        for key, base in (
+            ("margin_pct", "sell_price"),
+            ("margin_fact_pct", "sell_price"),
+            ("margin_fact_on_cost_pct", purchase_basis),
+        ):
+            if row.get(base):
+                out.at[index, key] = out.at[index, "profit"] / row[base] * 100
         out.at[index,'carrier_reconciliation_required']=bool(fact is not None and row.get('cdek_delivery_cost',0)>0 and not ev.get('reconciliation_resolved'))
         out.at[index,'economics_is_estimated']=bool(row.get('economics_is_estimated',False) or ((snap.get('decision') or {}).get('metadata',{}).get('carrier_delivery',{}).get('incomplete',False) if isinstance(snap,dict) else False) or out.at[index,'carrier_expenses_estimated'] or out.at[index,'carrier_reconciliation_required'] or not row.get('uses_fact_purchase_price',False))
     return out

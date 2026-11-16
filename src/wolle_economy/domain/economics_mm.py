@@ -241,6 +241,38 @@ def calc_mm_economics(df: pd.DataFrame) -> pd.DataFrame:
         np.where(is_deducted, df["expected_payout"], 0.0),
         np.where(df["is_cancelled_before"], 0.0, df["profit"]),
     )
+    # Для отмены Poizon финансовый отчёт отражает и списания, и их возврат.
+    # Суммы на отправление применимы к позиции только при единственной позиции.
+    poizon_cancelled = df["channel"].eq("poizon") & df["is_cancelled_before"]
+    if poizon_cancelled.any():
+        one_item = df["shipment_item_count"].eq(1)
+        debits = pd.to_numeric(df["fr_debits"], errors="coerce")
+        credits = pd.to_numeric(df["fr_credits"], errors="coerce")
+        settled = one_item & debits.notna() & credits.notna()
+        df["mm_cancellation_finance_status"] = pd.Series(None, index=df.index, dtype=object)
+        df.loc[poizon_cancelled, "mm_cancellation_finance_status"] = np.select(
+            [~one_item, settled], ["unallocated", "settled"], default="missing_report"
+        )[poizon_cancelled]
+        df["mm_cancellation_debits"] = debits.where(poizon_cancelled & settled)
+        df["mm_cancellation_credits"] = credits.where(poizon_cancelled & settled)
+
+        # Сохранённая стоимость доставки СДЭК — фактический расход отправления.
+        # Тариф упаковки и закупочная цена сами по себе расход отмены не подтверждают.
+        costs = cdek_cost.where(one_item)
+        payout = (debits + credits).round(2).where(settled)
+        result = (payout - costs).round(2)
+        df.loc[poizon_cancelled, "our_costs"] = costs
+        df.loc[poizon_cancelled, "expected_profit"] = -costs
+        df.loc[poizon_cancelled, "payout_if_paid"] = payout
+        df.loc[poizon_cancelled, "payment_status"] = np.select(
+            [payout.lt(0), payout.gt(0), payout.eq(0)],
+            ["Списание", "Переведён", "Взаиморасчёт 0 ₽"],
+            default=None,
+        )[poizon_cancelled]
+        df.loc[poizon_cancelled, "actual_profit"] = result
+        df.loc[poizon_cancelled, "profit"] = result
+        df.loc[poizon_cancelled, "profit_no_promo"] = result
+
     df["profit_vs_expected"] = df["actual_profit"] - df["expected_profit"]
 
     # ── Метрики и аналитические поля ───────────────────────────────────────
@@ -266,7 +298,7 @@ def calc_mm_economics(df: pd.DataFrame) -> pd.DataFrame:
 
     bp = df["base_price_total"].replace(0, np.nan)
     df["margin_plan_on_cost_pct"] = (df["our_margin"] / bp * 100).round(2)
-    df["margin_fact_on_cost_pct"] = (df["profit"] / bp * 100).round(2)
+    df["margin_fact_on_cost_pct"] = (df["profit"] / bp * 100).round(2).mask(poizon_cancelled)
 
     df["is_loss"] = df["profit"] < 0
 

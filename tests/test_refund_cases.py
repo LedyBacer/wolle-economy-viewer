@@ -279,3 +279,12 @@ def test_receipts_are_displayed_separately_from_gross_expenses():
     r = apply_refund_cases(row(), [], [incoming], []).iloc[0]
     assert r["after_sales_gross_expense"] == 0 and r["after_sales_reimbursement"] == 300
     assert r["after_sales_expense"] == -300 and r["profit"] == 1100
+
+
+def test_poizon_cancellation_has_no_margin_percentage_after_refund_reconciliation():
+    cancelled = row(profit=-1731.60, purchase=0).assign(
+        mm_cancellation_finance_status="settled", sell_price=0
+    )
+    result = apply_refund_cases(cancelled, [], [operation()], []).iloc[0]
+    assert result["margin_fact_rub"] == pytest.approx(-2031.60)
+    assert pd.isna(result["margin_fact_on_cost_pct"])

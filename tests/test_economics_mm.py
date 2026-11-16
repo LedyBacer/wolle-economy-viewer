@@ -292,3 +292,71 @@ def test_packaging_and_adapter_are_in_default_table_and_export() -> None:
     ):
         assert column in MM_DISPLAY_COLUMNS
         assert column in _MM_MAIN_COLUMNS
+
+
+@pytest.mark.parametrize(
+    "item_count,debits,credits,delivery_cost,status,payout,result",
+    [
+        (1, -2773.92, 2773.92, 0, "settled", 0, 0),
+        (1, -1731.60, 0, 0, "settled", -1731.60, -1731.60),
+        (1, -1731.60, 0, 100, "settled", -1731.60, -1831.60),
+        (1, None, None, 0, "missing_report", None, None),
+        (2, -1731.60, 0, 0, "unallocated", None, None),
+    ],
+)
+def test_poizon_cancellation_financial_report(
+    item_count, debits, credits, delivery_cost, status, payout, result
+):
+    from wolle_economy.api.service import serialize_order_row
+
+    row = calc_mm_economics(make_mm_orders(
+        channel="poizon",
+        item_status="canceled",
+        cdek_status="WAITING",
+        fulfillment_status=MM_FULFILLMENT_STATUS_CANCELLED,
+        shipment_item_count=item_count,
+        fr_debits=debits,
+        fr_credits=credits,
+        fr_net_payout=(debits or 0) + (credits or 0),
+        market_services=abs(debits or 0),  # The payment report repeats the charge.
+        cdek_delivery_cost=delivery_cost,
+    )).iloc[0]
+    assert row["mm_cancellation_finance_status"] == status
+    assert row["base_purchase_expensed"] == 0
+    assert row["market_services"] == 0
+    for field, expected in (
+        ("payout_if_paid", payout),
+        ("profit", result),
+        ("actual_profit", result),
+        ("margin_fact_rub", result),
+        ("margin_fact_on_cost_pct", None),
+        ("mm_cancellation_debits", debits if status == "settled" else None),
+        ("mm_cancellation_credits", credits if status == "settled" else None),
+    ):
+        if expected is None:
+            assert pd.isna(row[field])
+        else:
+            assert row[field] == pytest.approx(expected)
+
+    response = serialize_order_row(row, "mm")
+    assert response["mm_cancellation_finance_status"] == status
+    assert response["margin_fact_rub"] == result
+    assert response["margin_fact_on_cost_pct"] is None
+
+
+def test_poizon_cancellation_keeps_fact_after_carrier_processing():
+    from wolle_economy.domain.carrier_expenses import apply_mm_carrier_expenses
+
+    calculated = calc_mm_economics(make_mm_orders(
+        channel="poizon",
+        fulfillment_status=MM_FULFILLMENT_STATUS_CANCELLED,
+        shipment_item_count=1,
+        fr_debits=-1731.60,
+        fr_credits=0,
+    ))
+    result = apply_mm_carrier_expenses(
+        calculated, [{"item_id": 101, "carrier_fact_amount_rub": 10}]
+    ).iloc[0]
+    assert result["actual_profit"] == pytest.approx(-1741.60)
+    assert result["margin_fact_rub"] == pytest.approx(-1741.60)
+    assert pd.isna(result["margin_fact_on_cost_pct"])

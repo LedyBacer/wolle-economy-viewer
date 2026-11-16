@@ -860,7 +860,11 @@ _MM_PR_AGG = """
 _MM_FR_AGG = """
     SELECT
         shipment_id,
-        SUM(COALESCE(company_debt, 0)) - SUM(COALESCE(seller_debt, 0)) AS fr_net_payout
+        SUM(COALESCE(company_debt, 0)) - SUM(COALESCE(seller_debt, 0)) AS fr_net_payout,
+        SUM(LEAST(COALESCE(company_debt, 0) - COALESCE(seller_debt, 0), 0))
+            AS fr_debits,
+        SUM(GREATEST(COALESCE(company_debt, 0) - COALESCE(seller_debt, 0), 0))
+            AS fr_credits
     FROM e_com.mm_financial_report
     WHERE shipment_id IS NOT NULL
       AND filename NOT ILIKE '%Без оплаты%'
@@ -1068,9 +1072,10 @@ SELECT
     -- Статусы (po.status вместо СДЭК)
     po.status                     AS cdek_status,
     i.status                      AS item_status,
-    CASE po.status
-        WHEN 'COMPLETED' THEN 'Доставлен'
-        WHEN 'CANCELED'  THEN 'Отменён'
+    CASE
+        WHEN i.status IN ('canceled', 'canceled_by_mm', 'canceled_confirmed') THEN 'Отменён'
+        WHEN po.status = 'CANCELED' THEN 'Отменён'
+        WHEN po.status = 'COMPLETED' THEN 'Доставлен'
         ELSE 'В доставке'
     END                           AS fulfillment_status,
     CASE
@@ -1095,6 +1100,12 @@ SELECT
 
     -- Фактическая выплата из финансовых отчётов ММ
     COALESCE(fr.fr_net_payout, 0) AS fr_net_payout,
+
+    fr.fr_debits,
+    fr.fr_credits,
+    -- Считаем все позиции, включая исключённые фильтром offer_id.
+    (SELECT COUNT(*) FROM e_com.mm_dbs_order_item sibling WHERE sibling.order_id = o.id)
+        AS shipment_item_count,
 
     -- Канал
     'poizon'                      AS channel
