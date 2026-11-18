@@ -13,7 +13,7 @@ from wolle_economy.logging_setup import setup_logging
 from wolle_economy.ui.components.home.kpis import render_kpis
 from wolle_economy.ui.components.home.navigation import render_navigation
 from wolle_economy.ui.components.home.trend import render_trend
-from wolle_economy.ui.helpers import safe_load_marketplace_orders
+from wolle_economy.ui.helpers import safe_load_marketplace_orders, select_overview_period, offer_data_refresh
 from wolle_economy.ui.marketplaces import iter_marketplace_ui
 
 setup_logging()
@@ -31,9 +31,17 @@ def main() -> None:
     st.title("Wolle — юнит-экономика")
     st.caption("Сводный обзор юнит-экономики по всем маркетплейсам.")
 
+    render_navigation()
+    st.divider()
+
     all_parts: list[pd.DataFrame] = []
-    for spec, _ in iter_marketplace_ui():
-        df = safe_load_marketplace_orders(spec)
+    marketplace_ui = iter_marketplace_ui()
+    date_from = select_overview_period()
+    offer_data_refresh(*(spec for spec, _ in marketplace_ui))
+    if date_from is not None:
+        st.caption(f"Показаны заказы с {date_from:%d.%m.%Y}. Период можно изменить в боковой панели.")
+    for spec, _ in marketplace_ui:
+        df = safe_load_marketplace_orders(spec, date_from=date_from)
         if df.empty:
             continue
         st.subheader(spec.title)
@@ -43,9 +51,6 @@ def main() -> None:
     if all_parts:
         st.divider()
         render_trend(pd.concat(all_parts, ignore_index=True))
-
-    st.divider()
-    render_navigation()
 
 
 main()

@@ -50,29 +50,29 @@ logger = logging.getLogger(__name__)
 
 def refund_aware_cache(**options):
     from functools import wraps
-    import time
     from sqlalchemy import text
 
     def decorate(fn):
-        @st.cache_data(**options)
-        def cached(revision, bucket, *args, **kwargs):
+        def cached(revision, *args, **kwargs):
             return fn(*args, **kwargs)
+
+        # Streamlit различает функции по имени и исходному коду.
+        cached.__qualname__ = f"{fn.__qualname__}.cached"
+        cached = st.cache_data(max_entries=12, **options)(cached)
 
         @wraps(fn)
         def wrapped(*args, **kwargs):
-            revision = 0
-            bucket = 0
-            if get_settings().carrier_economics_enabled:
-                from wolle_economy.db.queries import CARRIER_REVISION_SQL
-                with get_engine().connect() as conn:
-                    revision = tuple(conn.execute(CARRIER_REVISION_SQL).one())
-            if get_settings().refund_cases_enabled:
-                from wolle_economy.db.queries import AFTER_SALES_VERSION_SQL
+            settings = get_settings()
+            revision = []
+            if settings.carrier_economics_enabled or settings.refund_cases_enabled:
+                from wolle_economy.db.queries import AFTER_SALES_VERSION_SQL, CARRIER_REVISION_SQL
 
                 with get_engine().connect() as conn:
-                    revision = (revision, conn.execute(text(AFTER_SALES_VERSION_SQL)).scalar_one())
-                bucket = int(time.time() // 60)
-            return cached(revision, bucket, *args, **kwargs)
+                    if settings.carrier_economics_enabled:
+                        revision.append(tuple(conn.execute(CARRIER_REVISION_SQL).one()))
+                    if settings.refund_cases_enabled:
+                        revision.append(conn.execute(text(AFTER_SALES_VERSION_SQL)).scalar_one())
+            return cached(tuple(revision), *args, **kwargs)
 
         wrapped.clear = cached.clear
         return wrapped

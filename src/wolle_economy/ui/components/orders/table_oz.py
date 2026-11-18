@@ -135,7 +135,6 @@ for _col, _label in _OZ_COLUMN_LABELS.items():
         _OZ_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_MONEY_FMT)
 
 
-@st.cache_data(show_spinner=False)
 def _to_excel(df: pd.DataFrame) -> bytes:
     buf = io.BytesIO()
     excel_df = df.copy()
@@ -156,13 +155,13 @@ def show_oz_table(df: pd.DataFrame) -> None:
 
     col1, col2, _ = st.columns([1, 1, 4])
     with col1:
-        csv = view.to_csv(index=False).encode("utf-8-sig")
-        st.download_button("Скачать CSV", csv, "oz_orders.csv", "text/csv", key="oz_csv")
+        st.download_button("Скачать CSV", lambda: view.to_csv(index=False).encode("utf-8-sig"), "oz_orders.csv", "text/csv", on_click="ignore", key="oz_csv")
     with col2:
         st.download_button(
             "Скачать Excel",
-            _to_excel(view),
+            lambda: _to_excel(view),
             "oz_orders.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            on_click="ignore",
             key="oz_xlsx",
         )

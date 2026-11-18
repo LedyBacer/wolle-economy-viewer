@@ -21,6 +21,7 @@ def sidebar_db_filters_for(
     sellers_df = load_sellers_fn()
     min_date, max_date = load_date_range_fn()
 
+    start_date = max(min_date, max_date - datetime.timedelta(days=6))
     with st.sidebar:
         st.header(header)
         all_names = sellers_df["seller_name"].tolist()
@@ -32,7 +33,7 @@ def sidebar_db_filters_for(
         )
         date_range = st.date_input(
             date_label,
-            value=(min_date, max_date),
+            value=(start_date, max_date),
             min_value=min_date,
             max_value=max_date,
             key=f"{key_prefix}_date_range",
@@ -47,7 +48,7 @@ def sidebar_db_filters_for(
     if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
         date_from, date_to = date_range[0], date_range[1]
     else:
-        date_from, date_to = min_date, max_date
+        date_from, date_to = start_date, max_date
 
     return seller_ids, date_from, date_to
 

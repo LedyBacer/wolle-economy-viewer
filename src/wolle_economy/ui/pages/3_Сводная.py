@@ -14,7 +14,7 @@ st.set_page_config(
 from wolle_economy.logging_setup import setup_logging
 from wolle_economy.ui.columns import UNIFIED_COLUMNS
 from wolle_economy.ui.formatters import fmt_money, fmt_money_compact, fmt_pct
-from wolle_economy.ui.helpers import dedup_for_marketplace, safe_load_marketplace_orders
+from wolle_economy.ui.helpers import dedup_for_marketplace, safe_load_marketplace_orders, select_overview_period, offer_data_refresh
 from wolle_economy.ui.marketplaces import iter_marketplace_ui
 
 setup_logging()
@@ -87,8 +87,13 @@ def main() -> None:
     loaded: list[tuple[str, pd.DataFrame, pd.DataFrame]] = []
     parts: list[pd.DataFrame] = []
 
-    for spec, _ in iter_marketplace_ui():
-        df = safe_load_marketplace_orders(spec)
+    marketplace_ui = iter_marketplace_ui()
+    date_from = select_overview_period()
+    offer_data_refresh(*(spec for spec, _ in marketplace_ui))
+    if date_from is not None:
+        st.caption(f"Показаны заказы с {date_from:%d.%m.%Y}. Период можно изменить в боковой панели.")
+    for spec, _ in marketplace_ui:
+        df = safe_load_marketplace_orders(spec, date_from=date_from)
         if df.empty:
             continue
         od = dedup_for_marketplace(df, spec)

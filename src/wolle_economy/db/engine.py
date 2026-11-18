@@ -21,7 +21,7 @@ def get_engine() -> Engine:
         f"postgresql+psycopg2://{quote_plus(s.db_user)}:{quote_plus(s.db_password)}"
         f"@{s.db_host}:{s.db_port}/{s.db_name}"
     )
-    return create_engine(url, pool_pre_ping=True)
+    return create_engine(url, pool_pre_ping=True, connect_args={"connect_timeout": 5})
 
 
 def test_connection() -> tuple[bool, str]:

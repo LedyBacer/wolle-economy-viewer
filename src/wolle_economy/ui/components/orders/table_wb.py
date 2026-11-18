@@ -104,7 +104,6 @@ for _col, _label in COLUMN_LABELS.items():
         _WB_COLUMN_CONFIG[_label] = st.column_config.NumberColumn(format=_MONEY_FMT)
 
 
-@st.cache_data(show_spinner=False)
 def _to_excel(df: pd.DataFrame) -> bytes:
     buf = io.BytesIO()
     excel_df = df.copy()
@@ -125,13 +124,13 @@ def show_wb_table(df: pd.DataFrame) -> None:
 
     col1, col2, _ = st.columns([1, 1, 4])
     with col1:
-        csv = view.to_csv(index=False).encode("utf-8-sig")
-        st.download_button("Скачать CSV", csv, "wb_orders.csv", "text/csv", key="wb_csv")
+        st.download_button("Скачать CSV", lambda: view.to_csv(index=False).encode("utf-8-sig"), "wb_orders.csv", "text/csv", on_click="ignore", key="wb_csv")
     with col2:
         st.download_button(
             "Скачать Excel",
-            _to_excel(view),
+            lambda: _to_excel(view),
             "wb_orders.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            on_click="ignore",
             key="wb_xlsx",
         )

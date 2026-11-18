@@ -285,7 +285,7 @@ def _apply_payment_refund_fallback(df: pd.DataFrame, q: pd.Series) -> pd.DataFra
         df.get("payment_refund_total", pd.Series(0.0, index=df.index)),
         errors="coerce",
     ).fillna(0)
-    gross_sell = pd.to_numeric(df.get("sell_price"), errors="coerce")
+    gross_sell = pd.to_numeric(df.get("sell_price"), errors="coerce").astype(float)
     fallback_sell = (df["buyer_price"].fillna(0) + df["subsidy"].fillna(0)) * q
     gross_sell = gross_sell.fillna(fallback_sell)
     item_count = pd.to_numeric(
@@ -302,6 +302,10 @@ def _apply_payment_refund_fallback(df: pd.DataFrame, q: pd.Series) -> pd.DataFra
         & transaction_refund.eq(0)
     )
     df["payment_refund_fallback"] = full_refund
+    if not full_refund.any():
+        return df
+
+    df["returned_sell_price"] = pd.to_numeric(df["returned_sell_price"], errors="coerce").astype(float)
     df.loc[full_refund, "returned_sell_price"] = gross_sell[full_refund]
     df.loc[full_refund, "tr_delivered_quantity"] = 0
     df.loc[full_refund, "fulfillment_status"] = FulfillmentStatus.RETURN_CREATED

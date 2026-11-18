@@ -21,6 +21,25 @@ from wolle_economy.domain.economics import aggregate_yandex_orders
 logger = logging.getLogger(__name__)
 
 
+def offer_data_refresh(*specs: MarketplaceSpec) -> None:
+    """Сбрасывает кэш данных и фильтров выбранных площадок по запросу."""
+    if st.sidebar.button("Обновить данные", help="Загрузить свежие заказы и отчёты из базы."):
+        for spec in specs:
+            spec.load_orders.clear()
+            spec.load_date_range.clear()
+            spec.load_sellers.clear()
+
+
+def select_overview_period() -> datetime.date | None:
+    """Выбирает начало общего периода для всех площадок."""
+    days = st.sidebar.selectbox(
+        "Период",
+        (7, 30, 90, 365, None),
+        format_func=lambda days: f"Последние {days} дней" if days else "Вся история",
+    )
+    return datetime.date.today() - datetime.timedelta(days=days - 1) if days else None
+
+
 def orders_dedup(df: pd.DataFrame) -> pd.DataFrame:
     """Возвращает DataFrame с одной строкой на заказ (совместимость по ya_order_id)."""
     return aggregate_yandex_orders(df)
